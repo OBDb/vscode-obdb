@@ -92,7 +92,9 @@ function formatPropertiesForID(
   testerAddress?: number,
   forceFlowControlResponse: boolean = false,
   carProtocolStrategy?: CarProtocolStrategy,
-  canPriority?: number
+  canPriority?: number,
+  diagnosticLevelIn?: number,
+  diagnosticLevelOut?: number
 ): string {
   const parts: string[] = [];
 
@@ -124,6 +126,14 @@ function formatPropertiesForID(
     parts.push('f=' + filterToIDString(filter));
   }
 
+  if (diagnosticLevelIn !== undefined) {
+    parts.push(`dil=${diagnosticLevelIn.toString(16).toUpperCase().padStart(2, '0')}`);
+  }
+
+  if (diagnosticLevelOut !== undefined) {
+    parts.push(`dout=${diagnosticLevelOut.toString(16).toUpperCase().padStart(2, '0')}`);
+  }
+
   return parts.join(',');
 }
 
@@ -140,7 +150,9 @@ export function createCommandID(
   testerAddress?: number,
   forceFlowControlResponse: boolean = false,
   carProtocolStrategy?: CarProtocolStrategy,
-  canPriority?: number
+  canPriority?: number,
+  diagnosticLevelIn?: number,
+  diagnosticLevelOut?: number
 ): string {
   let id = headerAsString + '.';
 
@@ -160,7 +172,9 @@ export function createCommandID(
     testerAddress,
     forceFlowControlResponse,
     carProtocolStrategy,
-    canPriority
+    canPriority,
+    diagnosticLevelIn,
+    diagnosticLevelOut
   );
 
   if (propertiesString.length > 0) {
@@ -219,6 +233,8 @@ export function generateCommandIdFromDefinition(command: any): string {
   const testerAddress = command.tst;
   const forceFlowControlResponse = command.fcm1 || false;
   const canPriority = command.pri;
+  const diagnosticLevelIn = command.din;
+  const diagnosticLevelOut = command.dout;
 
   return createCommandID(
     headerAsString,
@@ -230,6 +246,8 @@ export function generateCommandIdFromDefinition(command: any): string {
     testerAddress,
     forceFlowControlResponse,
     carProtocolStrategy,
-    canPriority
+    canPriority,
+    diagnosticLevelIn,
+    diagnosticLevelOut
   );
 }
