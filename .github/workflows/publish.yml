@@ -16,6 +16,23 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Get version from tag
+      id: get_version
+      run: |
+        if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "IS_TAG=true" >> $GITHUB_OUTPUT
+        else
+          echo "IS_TAG=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Update package.json version
+      if: steps.get_version.outputs.IS_TAG == 'true'
+      run: |
+        VERSION=${{ steps.get_version.outputs.VERSION }}
+        npm version $VERSION --no-git-tag-version
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:

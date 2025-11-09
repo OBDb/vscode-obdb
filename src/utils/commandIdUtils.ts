@@ -127,7 +127,7 @@ function formatPropertiesForID(
   }
 
   if (diagnosticLevelIn !== undefined) {
-    parts.push(`dil=${diagnosticLevelIn.toString(16).toUpperCase().padStart(2, '0')}`);
+    parts.push(`din=${diagnosticLevelIn.toString(16).toUpperCase().padStart(2, '0')}`);
   }
 
   if (diagnosticLevelOut !== undefined) {
