@@ -20,11 +20,55 @@ interface NamingPattern {
  */
 export class ConsolidatedNamingRule implements ILinterRule {
   private patterns: NamingPattern[] = [
-    // Wheel speed naming pattern
+    // ABS speed → Wheel speed naming (matches Python implementation)
+    {
+      nameContains: ['abs', 'speed'],
+      nameFormatter: (signal: Signal) => {
+        const lowerName = signal.name.toLowerCase();
+
+        // Check for specific ABS speed patterns
+        if (lowerName.startsWith('abs speed')) {
+          if (lowerName.includes('front left')) {
+            return 'Front left wheel speed';
+          } else if (lowerName.includes('front right')) {
+            return 'Front right wheel speed';
+          } else if (lowerName.includes('rear left')) {
+            return 'Rear left wheel speed';
+          } else if (lowerName.includes('rear right')) {
+            return 'Rear right wheel speed';
+          } else if (lowerName.includes('(avg)')) {
+            return 'Average wheel speed';
+          } else {
+            // Generic ABS speed → Wheel speed
+            return signal.name.replace(/abs speed/i, 'Wheel speed');
+          }
+        }
+        return null;
+      },
+      description: 'ABS speed signals should use "Wheel speed" terminology'
+    },
+    // ABS traction control → Traction control (matches Python implementation)
+    {
+      nameContains: ['abs', 'traction', 'control'],
+      nameFormatter: (signal: Signal) => {
+        const lowerName = signal.name.toLowerCase();
+        if (lowerName.startsWith('abs traction control')) {
+          return signal.name.replace(/abs traction control/i, 'Traction control');
+        }
+        return null;
+      },
+      description: 'ABS traction control signals should be named "Traction control"'
+    },
+    // Wheel speed naming pattern (existing, for non-ABS cases)
     {
       nameContains: ['speed'],
       nameFormatter: (signal: Signal) => {
         const lowerName = signal.name.toLowerCase();
+
+        // Skip if already handled by ABS patterns
+        if (lowerName.includes('abs')) {
+          return null;
+        }
 
         let verticalPart: string | null = null;
         if (lowerName.includes('front')) {

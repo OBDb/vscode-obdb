@@ -14,6 +14,9 @@ import { AcronymAtStartOfSignalNameRule } from './rules/acronymAtStartOfSignalNa
 import { MapKeyNumericalRule } from './rules/mapKeyNumericalRule';
 import { CommandRaxDuplicationRule } from './rules/commandRaxDuplicationRule';
 import { SignalNameTypoRule } from './rules/signalNameTypoRule';
+// New rules ported from Python automation
+import { EvCommandFilteringRule } from './rules/evCommandFilteringRule';
+import { Mode01FilteringRule } from './rules/mode01FilteringRule';
 
 /**
  * Registry that manages all linter rules
@@ -57,7 +60,10 @@ export class RuleRegistry {
       AcronymAtStartOfSignalNameRule,
       MapKeyNumericalRule,
       CommandRaxDuplicationRule,
-      SignalNameTypoRule
+      SignalNameTypoRule,
+      // New rules ported from Python automation
+      EvCommandFilteringRule,
+      Mode01FilteringRule
     ];
 
     // Instantiate each rule class

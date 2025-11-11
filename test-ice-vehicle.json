@@ -1,0 +1,82 @@
+{
+  "commands": [
+    {
+      "hdr": "7E0",
+      "cmd": {"01": "00"},
+      "signals": []
+    },
+    {
+      "hdr": "7E0",
+      "cmd": {"22": "1234"},
+      "signals": [
+        {
+          "id": "RPM",
+          "name": "Engine speed",
+          "path": "engine.rpm",
+          "fmt": {"bix": 0, "len": 16, "unit": "rpm"}
+        },
+        {
+          "id": "FUEL_LEVEL",
+          "name": "Fuel level",
+          "path": "fuel.level",
+          "fmt": {"bix": 16, "len": 8, "unit": "percent"}
+        }
+      ]
+    },
+    {
+      "hdr": "744",
+      "cmd": {"22": "E001"},
+      "signals": [
+        {
+          "id": "HVBAT_SOC",
+          "name": "HV battery charge",
+          "path": "battery.soc",
+          "fmt": {"bix": 0, "len": 8, "unit": "percent"},
+          "suggestedMetric": "stateOfCharge"
+        },
+        {
+          "id": "HVBAT_TEMP",
+          "name": "HV battery temperature",
+          "path": "battery.temp",
+          "fmt": {"bix": 8, "len": 8, "unit": "celsius"}
+        }
+      ]
+    },
+    {
+      "hdr": "7E0",
+      "cmd": {"22": "5678"},
+      "signals": [
+        {
+          "id": "WHEEL_SPEED_FL",
+          "name": "ABS Speed Front Left",
+          "path": "wheel.fl",
+          "fmt": {"bix": 0, "len": 8}
+        },
+        {
+          "id": "TEST_DUP",
+          "name": "Test Signal",
+          "path": "test1",
+          "fmt": {"bix": 16, "len": 8}
+        },
+        {
+          "id": "TEST_DUP",
+          "name": "Duplicate Signal",
+          "path": "test2",
+          "fmt": {"bix": 24, "len": 8}
+        },
+        {
+          "id": "OVERLAP_OLD",
+          "name": "Old signal",
+          "path": "overlap1",
+          "fmt": {"bix": 32, "len": 8}
+        },
+        {
+          "id": "OVERLAP_NEW",
+          "name": "New signal",
+          "path": "overlap2",
+          "fmt": {"bix": 32, "len": 8}
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "commands": [
+    {
+      "hdr": "7E0",
+      "cmd": {"01": "00"},
+      "signals": []
+    },
+    {
+      "hdr": "744",
+      "cmd": {"E0": "01"},
+      "signals": [
+        {
+          "id": "HVBAT_T",
+          "name": "HV battery temperature",
+          "path": "batt.temp",
+          "fmt": {
+            "bix": 0,
+            "len": 8
+          }
+        },
+        {
+          "id": "TEST_SIGNAL",
+          "name": "ABS Speed Front Left",
+          "path": "test",
+          "fmt": {
+            "bix": 16,
+            "len": 8
+          }
+        },
+        {
+          "id": "TEST_SIGNAL",
+          "name": "Duplicate Test",
+          "path": "test2",
+          "fmt": {
+            "bix": 24,
+            "len": 8
+          }
+        },
+        {
+          "id": "WHEEL_SPEED_FL",
+          "name": "Wheel Speed",
+          "path": "speed.fl",
+          "fmt": {
+            "bix": 32,
+            "len": 8
+          }
+        },
+        {
+          "id": "WHEEL_SPEED_FL_OLD",
+          "name": "Old wheel speed",
+          "path": "speed.fl.old",
+          "fmt": {
+            "bix": 32,
+            "len": 8
+          }
+        }
+      ]
+    }
+  ]
+}

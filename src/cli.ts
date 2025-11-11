@@ -9,6 +9,7 @@ import {
   getUnsupportedModelYearsForCommand
 } from './utils/commandSupportUtils';
 import { getGenerations, GenerationSet } from './utils/generationsCore';
+import { detectVehicleType, shouldFilterEvCommand, VehicleType } from './utils/vehicleTypeDetection';
 
 interface CliOptions {
   command: string;
@@ -51,11 +52,12 @@ function printUsage(): void {
   console.log('Usage: obdb <command> <workspace-path> [options]');
   console.log('');
   console.log('Commands:');
-  console.log('  optimize <workspace-path>         Parse and optimize signalset');
+  console.log('  optimize <workspace-path>         Parse and optimize debug filters');
+  console.log('  fix <workspace-path>              Apply linting auto-fixes (sentence case, duplicates, bit overlaps, ABS naming, EV filtering, Mode 01)');
   console.log('  command-support <workspace-path> <command-id>  Show supported and unsupported model years for a command');
   console.log('');
   console.log('Options:');
-  console.log('  --commit                          Apply the optimizations to the file');
+  console.log('  --commit                          Apply the changes to the file');
 }
 
 
@@ -366,6 +368,258 @@ async function commandSupportCommand(workspacePath: string, commandId: string): 
   }
 }
 
+async function fixCommand(workspacePath: string, commit: boolean): Promise<void> {
+  if (!fs.existsSync(workspacePath)) {
+    console.error(`Error: Workspace path does not exist: ${workspacePath}`);
+    process.exit(1);
+  }
+
+  const signalsetPath = path.join(workspacePath, 'signalsets', 'v3', 'default.json');
+
+  if (!fs.existsSync(signalsetPath)) {
+    console.error(`Error: Signalset not found at ${signalsetPath}`);
+    process.exit(1);
+  }
+
+  console.log('🔧 OBDb Signalset Auto-Fixer');
+  console.log('=============================\n');
+  console.log(`📂 Workspace: ${workspacePath}`);
+  console.log(`📄 Signalset: ${signalsetPath}\n`);
+
+  try {
+    // Read and parse signalset
+    const content = await fs.promises.readFile(signalsetPath, 'utf-8');
+    const signalset = JSON.parse(content);
+
+    if (!signalset.commands || !Array.isArray(signalset.commands)) {
+      console.error('Error: Invalid signalset format - missing commands array');
+      process.exit(1);
+    }
+
+    // Extract model name from workspace path
+    const modelName = path.basename(workspacePath);
+    console.log(`🚗 Detected model: ${modelName}`);
+
+    // Detect vehicle type
+    const vehicleType = detectVehicleType(modelName, signalset.commands);
+    console.log(`🔍 Vehicle type: ${vehicleType}\n`);
+
+    // Track fixes
+    const fixes = {
+      sentenceCase: 0,
+      duplicateIds: 0,
+      bitOverlap: 0,
+      absNaming: 0,
+      evFiltering: 0,
+      mode01Filtering: 0
+    };
+
+    // Collect all signal IDs to detect duplicates
+    const signalIdMap = new Map<string, any[]>();
+    for (const cmd of signalset.commands) {
+      if (cmd.signals && Array.isArray(cmd.signals)) {
+        for (const signal of cmd.signals) {
+          if (signal.id) {
+            if (!signalIdMap.has(signal.id)) {
+              signalIdMap.set(signal.id, []);
+            }
+            signalIdMap.get(signal.id)!.push(signal);
+          }
+        }
+      }
+    }
+
+    // Find signals to remove due to bit overlaps
+    const signalsToRemove = new Set<any>();
+
+    // Process each command
+    const commandsToRemove: number[] = [];
+
+    for (let cmdIndex = 0; cmdIndex < signalset.commands.length; cmdIndex++) {
+      const cmd = signalset.commands[cmdIndex];
+
+      // Check for Mode 01 commands
+      if (cmd.cmd && typeof cmd.cmd === 'object' && '01' in cmd.cmd) {
+        console.log(`  ⚠️  Mode 01 command detected: ${JSON.stringify(cmd.cmd)}`);
+        commandsToRemove.push(cmdIndex);
+        fixes.mode01Filtering++;
+        continue;
+      }
+
+      // Check for EV commands in ICE vehicles
+      if (vehicleType === VehicleType.ICE && shouldFilterEvCommand(cmd, vehicleType)) {
+        const cmdDesc = `${cmd.hdr}.${JSON.stringify(cmd.cmd)}`;
+        console.log(`  ⚠️  EV command in ICE vehicle: ${cmdDesc}`);
+        commandsToRemove.push(cmdIndex);
+        fixes.evFiltering++;
+        continue;
+      }
+
+      if (!cmd.signals || !Array.isArray(cmd.signals)) {
+        continue;
+      }
+
+      // Group signals by bit range for overlap detection
+      const bitGroups = new Map<string, any[]>();
+      for (const signal of cmd.signals) {
+        if (signal.fmt && typeof signal.fmt.len === 'number') {
+          const bix = signal.fmt.bix || 0;
+          const len = signal.fmt.len;
+          const bitRangeKey = `${bix}-${bix + len - 1}`;
+
+          if (!bitGroups.has(bitRangeKey)) {
+            bitGroups.set(bitRangeKey, []);
+          }
+          bitGroups.get(bitRangeKey)!.push(signal);
+        }
+      }
+
+      // Resolve bit overlaps
+      for (const [bitRange, overlappingSignals] of bitGroups.entries()) {
+        if (overlappingSignals.length > 1) {
+          // Remove obsolete versions
+          const obsoleteSuffixes = ['_PRE21', '_OLD', '_V1'];
+          let removedObsolete = false;
+
+          for (const signal of overlappingSignals) {
+            if (obsoleteSuffixes.some(suffix => signal.id.includes(suffix))) {
+              signalsToRemove.add(signal);
+              console.log(`  🗑️  Removing obsolete signal: ${signal.id} (bit overlap at ${bitRange})`);
+              fixes.bitOverlap++;
+              removedObsolete = true;
+            }
+          }
+
+          // If no obsolete found, remove less specific names
+          if (!removedObsolete && overlappingSignals.length > 1) {
+            const sorted = [...overlappingSignals].sort((a, b) => {
+              const aHasTpms = a.id.includes('TPMS');
+              const bHasTpms = b.id.includes('TPMS');
+              if (aHasTpms && !bHasTpms) return -1;
+              if (!aHasTpms && bHasTpms) return 1;
+              return b.id.length - a.id.length;
+            });
+
+            const toRemove = sorted[sorted.length - 1];
+            signalsToRemove.add(toRemove);
+            console.log(`  🗑️  Removing less specific signal: ${toRemove.id} (bit overlap at ${bitRange})`);
+            fixes.bitOverlap++;
+          }
+        }
+      }
+
+      // Process each signal for fixes
+      for (const signal of cmd.signals) {
+        if (signalsToRemove.has(signal)) {
+          continue;
+        }
+
+        // Fix 1: Sentence case
+        if (signal.name) {
+          const oldName = signal.name;
+          const newName = oldName.charAt(0).toUpperCase() + oldName.slice(1).toLowerCase();
+          if (newName !== oldName) {
+            signal.name = newName;
+            fixes.sentenceCase++;
+          }
+        }
+
+        // Fix 2: ABS → Wheel speed naming
+        if (signal.name) {
+          const oldName = signal.name;
+          const lowerName = oldName.toLowerCase();
+          let newName = oldName;
+
+          if (lowerName.startsWith('abs speed')) {
+            if (lowerName.includes('front left')) {
+              newName = 'Front left wheel speed';
+            } else if (lowerName.includes('front right')) {
+              newName = 'Front right wheel speed';
+            } else if (lowerName.includes('rear left')) {
+              newName = 'Rear left wheel speed';
+            } else if (lowerName.includes('rear right')) {
+              newName = 'Rear right wheel speed';
+            } else if (lowerName.includes('(avg)')) {
+              newName = 'Average wheel speed';
+            } else {
+              newName = oldName.replace(/abs speed/i, 'Wheel speed');
+            }
+          } else if (lowerName.startsWith('abs traction control')) {
+            newName = oldName.replace(/abs traction control/i, 'Traction control');
+          }
+
+          if (newName !== oldName) {
+            signal.name = newName;
+            console.log(`  ✏️  ABS naming: "${oldName}" → "${newName}"`);
+            fixes.absNaming++;
+          }
+        }
+      }
+    }
+
+    // Remove commands marked for removal (in reverse order)
+    for (let i = commandsToRemove.length - 1; i >= 0; i--) {
+      signalset.commands.splice(commandsToRemove[i], 1);
+    }
+
+    // Remove signals marked for removal
+    for (const cmd of signalset.commands) {
+      if (cmd.signals) {
+        cmd.signals = cmd.signals.filter((s: any) => !signalsToRemove.has(s));
+      }
+    }
+
+    // Fix 3: Duplicate signal IDs
+    for (const [signalId, signalList] of signalIdMap.entries()) {
+      if (signalList.length > 1) {
+        for (let i = 1; i < signalList.length; i++) {
+          const signal = signalList[i];
+          let baseId = signalId;
+          let newVersion = i + 1;
+
+          if (signalId.includes('_V')) {
+            const parts = signalId.split('_V');
+            baseId = parts[0];
+            newVersion = i + 2;
+          }
+
+          const newId = `${baseId}_V${newVersion}`;
+          signal.id = newId;
+          console.log(`  🔢 Duplicate ID: "${signalId}" → "${newId}"`);
+          fixes.duplicateIds++;
+        }
+      }
+    }
+
+    // Summary
+    console.log('\n📊 Summary:');
+    console.log('===========');
+    const totalFixes = Object.values(fixes).reduce((a, b) => a + b, 0);
+    console.log(`Total fixes: ${totalFixes}`);
+    if (fixes.sentenceCase > 0) console.log(`  - Sentence case: ${fixes.sentenceCase}`);
+    if (fixes.duplicateIds > 0) console.log(`  - Duplicate IDs: ${fixes.duplicateIds}`);
+    if (fixes.bitOverlap > 0) console.log(`  - Bit overlaps: ${fixes.bitOverlap}`);
+    if (fixes.absNaming > 0) console.log(`  - ABS naming: ${fixes.absNaming}`);
+    if (fixes.evFiltering > 0) console.log(`  - EV commands filtered: ${fixes.evFiltering}`);
+    if (fixes.mode01Filtering > 0) console.log(`  - Mode 01 filtered: ${fixes.mode01Filtering}`);
+
+    // Write back if --commit
+    if (commit && totalFixes > 0) {
+      console.log('\n💾 Writing changes...');
+      await fs.promises.writeFile(signalsetPath, JSON.stringify(signalset, null, 2), 'utf-8');
+      console.log('✅ Successfully applied all fixes!');
+    } else if (!commit && totalFixes > 0) {
+      console.log('\n💡 Use --commit to apply these changes');
+    } else if (totalFixes === 0) {
+      console.log('\n✨ Signalset is already clean - no fixes needed!');
+    }
+
+  } catch (error) {
+    console.error('Error processing signalset:', error);
+    process.exit(1);
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs();
 
@@ -377,6 +631,14 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       await optimizeCommand(options.workspacePath, options.commit || false);
+      break;
+    case 'fix':
+      if (!options.workspacePath) {
+        console.error('Error: workspace-path is required for fix command');
+        printUsage();
+        process.exit(1);
+      }
+      await fixCommand(options.workspacePath, options.commit || false);
       break;
     case 'command-support':
       if (!options.workspacePath) {

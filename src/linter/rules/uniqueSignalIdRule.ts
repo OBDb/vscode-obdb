@@ -29,7 +29,7 @@ export class UniqueSignalIdRule implements ILinterRule {
     }
 
     const results: LintResult[] = [];
-    const idMap = new Map<string, jsonc.Node>();
+    const idMap = new Map<string, { node: jsonc.Node, count: number }>();
 
     // Process commands array first
     const commandsNode = jsonc.findNodeAtLocation(rootNode, ['commands']);
@@ -58,10 +58,10 @@ export class UniqueSignalIdRule implements ILinterRule {
   /**
    * Checks if a node has a duplicate ID and adds a result to the results array if it does.
    * @param node The node to check
-   * @param idMap Map of previously seen IDs to their nodes
+   * @param idMap Map of previously seen IDs to their nodes and occurrence count
    * @param results Array to add results to
    */
-  private checkForDuplicateId(node: jsonc.Node, idMap: Map<string, jsonc.Node>, results: LintResult[]): void {
+  private checkForDuplicateId(node: jsonc.Node, idMap: Map<string, { node: jsonc.Node, count: number }>, results: LintResult[]): void {
     try {
       const idNode = jsonc.findNodeAtLocation(node, ['id']);
       if (!idNode) {
@@ -75,17 +75,56 @@ export class UniqueSignalIdRule implements ILinterRule {
 
       // If we've seen this ID before, it's a duplicate
       if (idMap.has(id)) {
+        const entry = idMap.get(id)!;
+        entry.count++;
+
+        // Generate versioned ID using semantic versioning (matches Python implementation)
+        const newId = this.generateVersionedId(id, entry.count);
+
         results.push({
           ruleId: this.getConfig().id,
-          message: `ID "${id}" is not unique. Another signal or signal group in this file uses the same ID.`,
+          message: `ID "${id}" is not unique. Another signal or signal group in this file uses the same ID. Suggest renaming to "${newId}".`,
           node: idNode,
+          suggestion: {
+            title: `Rename to "${newId}"`,
+            edits: [{
+              offset: idNode.offset,
+              length: idNode.length,
+              newText: `"${newId}"`
+            }]
+          }
         });
       } else {
         // Otherwise, record that we've seen this ID
-        idMap.set(id, node);
+        idMap.set(id, { node, count: 1 });
       }
     } catch (err) {
       console.error('Error checking for duplicate ID:', err);
+    }
+  }
+
+  /**
+   * Generates a versioned ID using semantic versioning for duplicates
+   * Matches Python implementation exactly:
+   * - First duplicate becomes _V2
+   * - Second duplicate becomes _V3, etc.
+   *
+   * @param originalId The original signal ID
+   * @param occurrenceCount The number of times we've seen this ID (1-based)
+   * @returns Versioned ID (e.g., "SIGNAL_V2", "SIGNAL_V3")
+   */
+  private generateVersionedId(originalId: string, occurrenceCount: number): string {
+    let baseId = originalId;
+
+    // Check if already has version suffix (_V pattern)
+    if (originalId.includes('_V')) {
+      const parts = originalId.split('_V');
+      baseId = parts[0];
+      // Start from next version number
+      return `${baseId}_V${occurrenceCount + 1}`;
+    } else {
+      // Start from V2 for first duplicate (occurrenceCount will be 2)
+      return `${baseId}_V${occurrenceCount + 1}`;
     }
   }
 
