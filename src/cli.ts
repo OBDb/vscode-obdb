@@ -60,29 +60,26 @@ function printUsage(): void {
 
 
 /**
- * Calculates the debug filter based on supported and unsupported years
+ * Calculates the debug filter based on supported years
  * Returns null if the command should have "dbg": true instead
  * @param supportedYears Array of supported model years
- * @param unsupportedYears Array of unsupported model years
- * @param earliestYear Optional earliest model year for the vehicle (from generations data)
- * @param latestYear Optional latest model year for the vehicle (from generations data)
+ * @param generationSet Generation information for the vehicle
  */
 function calculateDebugFilter(
   supportedYears: string[],
-  unsupportedYears: string[],
   generationSet: GenerationSet
 ): any | null {
   const supported = supportedYears.map(y => parseInt(y, 10));
-  const unsupported = unsupportedYears.map(y => parseInt(y, 10));
-  const allYears = [...supported, ...unsupported].sort((a, b) => a - b);
 
-  // If no known years, use "dbg": true
-  if (allYears.length === 0) {
+  // Only use supported years to determine the bounds of the filter
+  // Unsupported years don't give us definitive information - they just mean
+  // the command doesn't work with the current configuration
+  if (supported.length === 0) {
     return null;
   }
 
-  let minYear = Math.min(...allYears);
-  let maxYear = Math.max(...allYears);
+  let minYear = Math.min(...supported);
+  let maxYear = Math.max(...supported);
 
   // Constrain to generation bounds if available
   if (generationSet.firstYear !== undefined && minYear < generationSet.firstYear) {
@@ -101,11 +98,13 @@ function calculateDebugFilter(
     filter.to = toYear;
   }
 
-  // Find years between min and max (exclusive) that are unsupported
+  // Find years between min and max (exclusive) that are NOT supported
+  // This includes both explicitly unsupported years and unknown years
+  // We keep unsupported years in the debug filter because the command might work with different configurations
   // Years at the boundaries are covered by "to" and "from"
   const gapYears: number[] = [];
   for (let year = minYear + 1; year < maxYear; year++) {
-    if (!supported.includes(year) && !unsupported.includes(year)) {
+    if (!supported.includes(year)) {
       gapYears.push(year);
     }
   }
@@ -198,7 +197,7 @@ async function optimizeCommand(workspacePath: string, commit: boolean = false): 
       console.log(`     Supported years: ${supportedYears.length > 0 ? supportedYears.join(', ') : 'none'}`);
       console.log(`     Unsupported years: ${unsupportedYears.length > 0 ? unsupportedYears.join(', ') : 'none'}`);
 
-      const newFilter = calculateDebugFilter(supportedYears, unsupportedYears, generationSet);
+      const newFilter = calculateDebugFilter(supportedYears, generationSet);
 
       if (newFilter === null) {
         console.log(`     ✅ Setting: "dbg": true`);
