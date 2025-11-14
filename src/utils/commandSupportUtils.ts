@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { generateCommandIdFromDefinition, ID_PROPERTY_DIVIDER } from './commandIdUtils';
 import { Generation, getGenerations } from './generations';
+import { CommandSupportCache } from '../caches/commands/commandSupportCache';
 
 /**
  * Loads YAML content with ECU keys forced to strings
@@ -89,17 +90,47 @@ export function generateNormalizedCommandId(command: any): string {
 }
 
 /**
+ * Gets both supported and unsupported model years for a command (cached)
+ * @param commandId The command ID to check
+ * @param workspaceRoot The workspace folder root path
+ * @param cache The cache instance to use
+ * @returns Object with supported and unsupported year arrays
+ */
+export async function getCommandSupportInfo(commandId: string, workspaceRoot: string, cache: CommandSupportCache): Promise<{ supported: string[], unsupported: string[] }> {
+  // Check if we have cached results for this command
+  const cachedResult = cache.getCommandSupport(workspaceRoot, commandId);
+  if (cachedResult) {
+    return {
+      supported: cachedResult.supported,
+      unsupported: cachedResult.unsupported
+    };
+  }
+
+  // If not cached, fetch both supported and unsupported years
+  const [supported, unsupported] = await Promise.all([
+    getSupportedModelYearsForCommand(commandId, workspaceRoot, cache),
+    getUnsupportedModelYearsForCommand(commandId, workspaceRoot, cache)
+  ]);
+
+  // Cache the combined result
+  cache.setCommandSupport(workspaceRoot, commandId, supported, unsupported);
+
+  return { supported, unsupported };
+}
+
+/**
  * Gets all model years that explicitly list a command as unsupported
  * @param commandId The command ID to check (e.g. '7E0.2211BA')
  * @param workspaceRoot The workspace folder root path
+ * @param cache The cache instance to use
  * @returns Array of model years where the command is explicitly unsupported
  */
-export async function getUnsupportedModelYearsForCommand(commandId: string, workspaceRoot: string): Promise<string[]> {
+export async function getUnsupportedModelYearsForCommand(commandId: string, workspaceRoot: string, cache: CommandSupportCache): Promise<string[]> {
   const testCasesPath = path.join(workspaceRoot, 'tests', 'test_cases');
   const unsupportedYears: string[] = [];
 
   try {
-    const years = await fs.promises.readdir(testCasesPath);
+    const years = await cache.getDirectoryEntries(testCasesPath);
     for (const year of years) {
       const yearPath = path.join(testCasesPath, year);
       try {
@@ -109,31 +140,25 @@ export async function getUnsupportedModelYearsForCommand(commandId: string, work
         }
 
         const supportFilePath = path.join(yearPath, 'command_support.yaml');
-        try {
-          const content = await fs.promises.readFile(supportFilePath, 'utf-8');
-          const yamlContent = loadCommandSupportYaml(content);
+        const yamlContent = await cache.getYamlFile(supportFilePath);
 
-          if (yamlContent && yamlContent.unsupported_commands_by_ecu) {
-            const unsupportedCommands = Object.values(yamlContent.unsupported_commands_by_ecu as Record<string, string[]>)
-              .flat() as string[];
+        if (yamlContent && yamlContent.unsupported_commands_by_ecu) {
+          const unsupportedCommands = Object.values(yamlContent.unsupported_commands_by_ecu as Record<string, string[]>)
+            .flat() as string[];
 
-            // Normalize the input command ID
-            const normalizedCommandId = normalizeCommandId(commandId);
-            const normalizedStripFilter = normalizeCommandId(stripReceiveFilter(commandId));
+          // Normalize the input command ID
+          const normalizedCommandId = normalizeCommandId(commandId);
+          const normalizedStripFilter = normalizeCommandId(stripReceiveFilter(commandId));
 
-            // Check if any unsupported command matches when normalized
-            const isUnsupported = unsupportedCommands.some(cmd => {
-              const normalizedCmd = normalizeCommandId(cmd);
-              return normalizedCmd === normalizedCommandId || normalizedCmd === normalizedStripFilter;
-            });
+          // Check if any unsupported command matches when normalized
+          const isUnsupported = unsupportedCommands.some(cmd => {
+            const normalizedCmd = normalizeCommandId(cmd);
+            return normalizedCmd === normalizedCommandId || normalizedCmd === normalizedStripFilter;
+          });
 
-            if (isUnsupported) {
-              unsupportedYears.push(year);
-            }
+          if (isUnsupported) {
+            unsupportedYears.push(year);
           }
-        } catch (err) {
-          console.error(`Error reading or parsing command support file for year ${year}:`, err);
-          // It's ok if the support file doesn't exist or fails to parse
         }
       } catch (statErr) {
         console.error(`Error stating path for year ${year}:`, statErr);
@@ -151,9 +176,11 @@ export async function getUnsupportedModelYearsForCommand(commandId: string, work
  * Gets all model years that support a specific command
  * @param commandId The command ID to check (e.g. '7E0.2211BA')
  * @param workspaceRoot The workspace folder root path
+ * @param cache The cache instance to use
  * @returns Array of model years that support the command
  */
-export async function getSupportedModelYearsForCommand(commandId: string, workspaceRoot: string): Promise<string[]> {
+export async function getSupportedModelYearsForCommand(commandId: string, workspaceRoot: string, cache: CommandSupportCache): Promise<string[]> {
+
   const cmdPart = commandId.split('.').pop() || '';
   const testCasesPath = path.join(workspaceRoot, 'tests', 'test_cases');
   const supportedYears: string[] = [];
@@ -164,7 +191,7 @@ export async function getSupportedModelYearsForCommand(commandId: string, worksp
   const commandSuffix = commandParts[commandParts.length - 1]; // e.g., "220103"
 
   try {
-    const years = await fs.promises.readdir(testCasesPath);
+    const years = await cache.getDirectoryEntries(testCasesPath);
     for (const year of years) {
       console.log(`Checking year: ${year}`);
       const yearPath = path.join(testCasesPath, year);
@@ -179,7 +206,7 @@ export async function getSupportedModelYearsForCommand(commandId: string, worksp
         try {
           const commandsDirStat = await fs.promises.stat(commandsDir);
           if (commandsDirStat.isDirectory()) {
-            const commandFiles = await fs.promises.readdir(commandsDir);
+            const commandFiles = await cache.getDirectoryEntries(commandsDir);
             for (const file of commandFiles) {
               // Parse the filename to extract header and suffix
               const fileNameWithoutExt = normalizeCommandId(file.replace(/\.(yaml|yml)$/, ''));
@@ -202,38 +229,33 @@ export async function getSupportedModelYearsForCommand(commandId: string, worksp
 
         if (!foundInYear) {
           const supportFilePath = path.join(yearPath, 'command_support.yaml');
-          try {
-            const content = await fs.promises.readFile(supportFilePath, 'utf-8');
-            const yamlContent = loadCommandSupportYaml(content);
+          const yamlContent = await cache.getYamlFile(supportFilePath);
 
-            if (yamlContent && yamlContent.supported_commands_by_ecu) {
-              for (const ecuCommands of Object.values(yamlContent.supported_commands_by_ecu as Record<string, string[]>)) {
-                for (const cmd of ecuCommands as string[]) {
-                  // Use the normalizeCommandId helper to get just the command part
-                  const normalizedCmd = normalizeCommandId(cmd);
-                  const ecu = Object.keys(yamlContent.supported_commands_by_ecu).find(key => yamlContent.supported_commands_by_ecu[key] === ecuCommands);
+          if (yamlContent && yamlContent.supported_commands_by_ecu) {
+            for (const ecuCommands of Object.values(yamlContent.supported_commands_by_ecu as Record<string, string[]>)) {
+              for (const cmd of ecuCommands as string[]) {
+                // Use the normalizeCommandId helper to get just the command part
+                const normalizedCmd = normalizeCommandId(cmd);
+                const ecu = Object.keys(yamlContent.supported_commands_by_ecu).find(key => yamlContent.supported_commands_by_ecu[key] === ecuCommands);
 
-                  // Parse the normalized command to extract header and suffix
-                  const normalizedParts = normalizedCmd.split('.');
-                  const normalizedHeader = normalizedParts[0];
-                  const normalizedSuffix = normalizedParts[normalizedParts.length - 1];
+                // Parse the normalized command to extract header and suffix
+                const normalizedParts = normalizedCmd.split('.');
+                const normalizedHeader = normalizedParts[0];
+                const normalizedSuffix = normalizedParts[normalizedParts.length - 1];
 
-                  // Check for exact match with proper header and suffix comparison
-                  const headerMatches = normalizedHeader === commandHeader;
-                  const suffixMatches = normalizedSuffix === commandSuffix;
-                  const fullMatch = (ecu && `${ecu}.${normalizedCmd}` === commandId) || normalizedCmd === commandId;
+                // Check for exact match with proper header and suffix comparison
+                const headerMatches = normalizedHeader === commandHeader;
+                const suffixMatches = normalizedSuffix === commandSuffix;
+                const fullMatch = (ecu && `${ecu}.${normalizedCmd}` === commandId) || normalizedCmd === commandId;
 
-                  if ((headerMatches && suffixMatches) || fullMatch) {
-                    supportedYears.push(year);
-                    foundInYear = true;
-                    break;
-                  }
+                if ((headerMatches && suffixMatches) || fullMatch) {
+                  supportedYears.push(year);
+                  foundInYear = true;
+                  break;
                 }
-                if (foundInYear) break;
               }
+              if (foundInYear) break;
             }
-          } catch (err) {
-            // It's ok if the support file doesn't exist or fails to parse
           }
         }
       } catch (statErr) {

@@ -1,18 +1,86 @@
 import * as vscode from 'vscode';
 import * as jsonc from 'jsonc-parser';
-import { getSupportedModelYearsForCommand, getUnsupportedModelYearsForCommand, generateDebugFilterSuggestion, createSimpleCommandId, optimizeDebugFilter } from '../utils/commandSupportUtils';
+import { getCommandSupportInfo, generateDebugFilterSuggestion, createSimpleCommandId, optimizeDebugFilter } from '../utils/commandSupportUtils';
 import { groupModelYearsByGeneration, formatYearsAsRanges, getGenerationForModelYear } from '../utils/generations';
+import { CommandSupportCache } from '../caches/commands/commandSupportCache';
+
+interface DocumentCodeLensCache {
+  version: number;
+  codeLenses: vscode.CodeLens[];
+}
 
 export class CommandCodeLensProvider implements vscode.CodeLensProvider {
   private onDidChangeCodeLensesEmitter: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
   public readonly onDidChangeCodeLenses: vscode.Event<void> = this.onDidChangeCodeLensesEmitter.event;
+  private documentCache: Map<string, DocumentCodeLensCache> = new Map();
+  private cache: CommandSupportCache;
+  private testFileWatcher: vscode.FileSystemWatcher | undefined;
+  private invalidationTimer: NodeJS.Timeout | undefined;
+  private readonly DEBOUNCE_DELAY_MS = 5000; // 5 seconds
 
-  constructor() {
+  constructor(cache: CommandSupportCache) {
+    this.cache = cache;
     vscode.workspace.onDidChangeTextDocument(event => {
       if (event.document.languageId === 'json' && (event.document.fileName.includes('signalsets') || event.document.fileName.includes('commands'))) {
-        this.onDidChangeCodeLensesEmitter.fire();
+        // Clear the cache for this document immediately when it changes
+        this.documentCache.delete(event.document.uri.toString());
+        // Schedule debounced invalidation
+        this.scheduleInvalidation();
       }
     });
+
+    // Set up file system watcher for test files
+    this.setupTestFileWatcher();
+  }
+
+  private setupTestFileWatcher(): void {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceRoot) {
+      return;
+    }
+
+    // Watch for changes in the tests directory
+    const testsPattern = new vscode.RelativePattern(workspaceRoot, 'tests/**/*.{yaml,yml}');
+    this.testFileWatcher = vscode.workspace.createFileSystemWatcher(testsPattern);
+
+    // When any test file changes, schedule debounced cache invalidation
+    const handleTestFileChange = () => {
+      this.scheduleInvalidation();
+    };
+
+    this.testFileWatcher.onDidChange(handleTestFileChange);
+    this.testFileWatcher.onDidCreate(handleTestFileChange);
+    this.testFileWatcher.onDidDelete(handleTestFileChange);
+  }
+
+  private scheduleInvalidation(): void {
+    // Cancel any existing timer
+    if (this.invalidationTimer) {
+      clearTimeout(this.invalidationTimer);
+    }
+
+    // Schedule a new invalidation
+    this.invalidationTimer = setTimeout(() => {
+      this.performInvalidation();
+      this.invalidationTimer = undefined;
+    }, this.DEBOUNCE_DELAY_MS);
+  }
+
+  private performInvalidation(): void {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (workspaceRoot) {
+      this.cache.clearWorkspace(workspaceRoot);
+    }
+    this.documentCache.clear();
+    this.onDidChangeCodeLensesEmitter.fire();
+  }
+
+  dispose(): void {
+    if (this.invalidationTimer) {
+      clearTimeout(this.invalidationTimer);
+      this.invalidationTimer = undefined;
+    }
+    this.testFileWatcher?.dispose();
   }
 
   /**
@@ -61,7 +129,6 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   async provideCodeLenses(document: vscode.TextDocument, token: vscode.CancellationToken): Promise<vscode.CodeLens[]> {
-    const codeLenses: vscode.CodeLens[] = [];
     if (!document.fileName.includes('signalsets') && !document.fileName.includes('commands')) {
       return [];
     }
@@ -70,6 +137,16 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
     if (!workspaceRoot) {
       return [];
     }
+
+    // Check if we have a cached version for this document
+    const documentUri = document.uri.toString();
+    const cachedEntry = this.documentCache.get(documentUri);
+
+    if (cachedEntry && cachedEntry.version === document.version) {
+      return cachedEntry.codeLenses;
+    }
+
+    const codeLenses: vscode.CodeLens[] = [];
 
     const text = document.getText();
     const rootNode = jsonc.parseTree(text);
@@ -131,8 +208,7 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
                   document.positionAt(commandNode.offset + commandNode.length)
                 );
 
-                const supportedYears = await getSupportedModelYearsForCommand(commandId, workspaceRoot);
-                const unsupportedYears = await getUnsupportedModelYearsForCommand(commandId, workspaceRoot);
+                const { supported: supportedYears, unsupported: unsupportedYears } = await getCommandSupportInfo(commandId, workspaceRoot, this.cache);
 
                 // Filter out any years from unsupportedYears that are also in supportedYears
                 const finalUnsupportedYears = unsupportedYears.filter(year => !supportedYears.includes(year));
@@ -232,13 +308,29 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
         }
       }
     }
+
+    // Cache the result
+    this.documentCache.set(documentUri, {
+      version: document.version,
+      codeLenses: codeLenses
+    });
+
     return codeLenses;
   }
 }
 
-export function createCodeLensProvider(): vscode.Disposable {
-  return vscode.languages.registerCodeLensProvider(
+export function createCodeLensProvider(cache: CommandSupportCache): vscode.Disposable {
+  const provider = new CommandCodeLensProvider(cache);
+  const registration = vscode.languages.registerCodeLensProvider(
     { language: 'json', pattern: '**/{signalsets,commands}/**/*.json' },
-    new CommandCodeLensProvider()
+    provider
   );
+
+  // Return a composite disposable that cleans up both the registration and the provider
+  return {
+    dispose: () => {
+      registration.dispose();
+      provider.dispose();
+    }
+  };
 }

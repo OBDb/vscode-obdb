@@ -9,6 +9,7 @@ import {
   getUnsupportedModelYearsForCommand
 } from './utils/commandSupportUtils';
 import { getGenerations, GenerationSet } from './utils/generationsCore';
+import { CommandSupportCache } from './caches/commands/commandSupportCache';
 
 interface CliOptions {
   command: string;
@@ -138,6 +139,9 @@ async function optimizeCommand(workspacePath: string, commit: boolean = false): 
     process.exit(1);
   }
 
+  // Create cache instance for command support lookups
+  const cache = new CommandSupportCache();
+
   // Load generations data to determine earliest and latest model years
   const generations = await getGenerations(workspacePath);
   const generationSet = new GenerationSet(generations || []);
@@ -190,8 +194,8 @@ async function optimizeCommand(workspacePath: string, commit: boolean = false): 
       const rax = raxNode ? jsonc.getNodeValue(raxNode) : undefined;
 
       const commandId = createSimpleCommandId(hdr, cmd, rax);
-      const supportedYears = await getSupportedModelYearsForCommand(commandId, workspacePath);
-      const unsupportedYears = await getUnsupportedModelYearsForCommand(commandId, workspacePath);
+      const supportedYears = await getSupportedModelYearsForCommand(commandId, workspacePath, cache);
+      const unsupportedYears = await getUnsupportedModelYearsForCommand(commandId, workspacePath, cache);
 
       console.log(`  ${index + 1}. ${commandId}`);
       console.log(`     Supported years: ${supportedYears.length > 0 ? supportedYears.join(', ') : 'none'}`);
@@ -317,11 +321,14 @@ async function commandSupportCommand(workspacePath: string, commandId: string): 
   console.log(`Workspace: ${workspacePath}`);
   console.log('');
 
+  // Create cache instance for command support lookups
+  const cache = new CommandSupportCache();
+
   try {
     // Get supported and unsupported model years
     const [supportedYears, unsupportedYears] = await Promise.all([
-      getSupportedModelYearsForCommand(commandId, workspacePath),
-      getUnsupportedModelYearsForCommand(commandId, workspacePath)
+      getSupportedModelYearsForCommand(commandId, workspacePath, cache),
+      getUnsupportedModelYearsForCommand(commandId, workspacePath, cache)
     ]);
 
     // Sort years numerically

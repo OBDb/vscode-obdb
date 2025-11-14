@@ -6,7 +6,8 @@ import { createTestProvider } from './providers/testProvider';
 import { registerTestCommands, testExecutionEvent } from './utils/testCommands';
 import { registerTestExplorer } from './providers/testExplorerProvider';
 import { createDefinitionProvider } from './providers/definitionProvider';
-import { createCodeLensProvider } from './providers/codeLensProvider'; // Added import
+import { createCodeLensProvider } from './providers/codeLensProvider';
+import { CommandSupportCache } from './caches/commands/commandSupportCache';
 
 // Create a diagnostic collection for test failures
 let testDiagnosticCollection: vscode.DiagnosticCollection;
@@ -21,8 +22,11 @@ export function activate(context: vscode.ExtensionContext) {
   // Create diagnostic collection for test results
   testDiagnosticCollection = vscode.languages.createDiagnosticCollection('obdb-test-failures');
 
+  // Create shared cache instance for command support data
+  const commandSupportCache = new CommandSupportCache();
+
   // Register the hover provider for JSON files
-  const hoverProvider = createHoverProvider();
+  const hoverProvider = createHoverProvider(commandSupportCache);
   console.log('Registered hover provider for JSON files');
 
   // Register the visualization provider for bitmap visualizations
@@ -42,7 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
   console.log('Registered definition provider for command ID navigation');
 
   // Register the CodeLens provider for JSON command files
-  const codeLensProvider = createCodeLensProvider(); // Added provider
+  const codeLensProvider = createCodeLensProvider(commandSupportCache);
   console.log('Registered CodeLens provider for JSON command files');
 
   // Register command for applying debug filters

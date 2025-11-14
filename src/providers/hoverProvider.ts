@@ -9,12 +9,14 @@ import * as yaml from 'js-yaml';
 import { groupModelYearsByGeneration } from '../utils/generations';
 import { numberToExcelColumn, bixToByte } from '../utils/bixConverter';
 import { getSupportedModelYearsForCommand, getUnsupportedModelYearsForCommand, stripReceiveFilter, createSimpleCommandId } from '../utils/commandSupportUtils';
+import { CommandSupportCache } from '../caches/commands/commandSupportCache';
 
 /**
  * Creates a hover provider for JSON files
+ * @param cache The cache instance to use for command support lookups
  * @returns A disposable hover provider registration
  */
-export function createHoverProvider(): vscode.Disposable {
+export function createHoverProvider(cache: CommandSupportCache): vscode.Disposable {
   return vscode.languages.registerHoverProvider('json', {
     async provideHover(document, position, token) {
       // Check if we're in a JSON file that's in the signalsets directory
@@ -179,10 +181,10 @@ export function createHoverProvider(): vscode.Disposable {
             markdownContent.appendMarkdown(`## Command: \`${commandId}\`\n\n`);
 
             // Get unsupported model years for this command
-            const unsupportedYears = await getUnsupportedModelYearsForCommand(commandId, workspaceRoot);
+            const unsupportedYears = await getUnsupportedModelYearsForCommand(commandId, workspaceRoot, cache);
 
             // Get supported model years for this command
-            const supportedYears = await getSupportedModelYearsForCommand(commandId, workspaceRoot);
+            const supportedYears = await getSupportedModelYearsForCommand(commandId, workspaceRoot, cache);
 
             // Create a combined table of all years with support status
             const allYears = [...new Set([...supportedYears, ...unsupportedYears])];
