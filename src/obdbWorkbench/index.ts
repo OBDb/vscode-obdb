@@ -4,7 +4,7 @@
  */
 
 // Re-export the main provider
-export { createVisualizationProvider } from './provider';
+export { OBDbWorkbenchProvider } from './provider';
 
 // Export other useful components for external use
 export { getWebviewContent } from './webviewContent';

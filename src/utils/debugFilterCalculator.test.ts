@@ -87,11 +87,11 @@ const result6 = calculateDebugFilter(
 );
 console.assert(
   result6?.to === 2009 &&
-  JSON.stringify(result6?.years) === '[2016,2017,2018,2019]' &&
+  !result6?.years &&
   result6?.from === 2026,
-  `Test 6 failed: Expected { "to": 2009, "years": [2016, 2017, 2018, 2019], "from": 2026 }, got ${JSON.stringify(result6)}`
+  `Test 6 failed: Expected { "to": 2009, "from": 2026 } (no years 2016-2019 since filter doesn't allow them), got ${JSON.stringify(result6)}`
 );
-console.log('✅ Test 6 passed: OR filter doesn\'t constrain the range');
+console.log('✅ Test 6 passed: OR filter excludes years not allowed by command filter');
 
 // Test 7: No supported years returns null
 const result7 = calculateDebugFilter(
@@ -128,5 +128,33 @@ console.assert(
   `Test 9 failed: Expected { "years": [2007, 2009] }, got ${JSON.stringify(result9)}`
 );
 console.log('✅ Test 9 passed: Command with filter.years=[2007,2009] but only 2008 supported');
+
+// Test 10: Complex filter with to/from/years (OR condition) - all explicit years are supported
+const result10 = calculateDebugFilter(
+  ['2007', '2008', '2009', '2010', '2011', '2013', '2015', '2021', '2022', '2023', '2024', '2025'],
+  createGenerationSet(2005, 2030),
+  { to: 2011, years: [2013, 2015, 2021], from: 2022 }
+);
+console.assert(
+  result10?.to === 2006 &&
+  !result10?.years &&
+  result10?.from === 2026,
+  `Test 10 failed: Expected { "to": 2006, "from": 2026 } (no years array since all allowed years are supported), got ${JSON.stringify(result10)}`
+);
+console.log('✅ Test 10 passed: Complex filter with all allowed gap years supported');
+
+// Test 11: Complex filter with to/from/years (OR condition) - some explicit years NOT supported
+const result11 = calculateDebugFilter(
+  ['2007', '2008', '2009', '2010', '2011', '2022', '2023', '2024', '2025'],
+  createGenerationSet(2005, 2030),
+  { to: 2011, years: [2013, 2015, 2021], from: 2022 }
+);
+console.assert(
+  result11?.to === 2006 &&
+  JSON.stringify(result11?.years) === '[2013,2015,2021]' &&
+  result11?.from === 2026,
+  `Test 11 failed: Expected { "to": 2006, "years": [2013, 2015, 2021], "from": 2026 }, got ${JSON.stringify(result11)}`
+);
+console.log('✅ Test 11 passed: Complex filter includes unsupported years from filter.years list');
 
 console.log('\n🎉 All tests passed!');
