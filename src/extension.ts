@@ -289,6 +289,265 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
+  // Register command for bulk optimizing all debug filters in the current document
+  const optimizeAllDebugFiltersCommand = vscode.commands.registerCommand('obdb.optimizeAllDebugFilters', async () => {
+    try {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showErrorMessage('No active editor found');
+        return;
+      }
+
+      const document = editor.document;
+
+      // Check if this is a valid document
+      if (!document.fileName.includes('signalsets') && !document.fileName.includes('commands')) {
+        vscode.window.showErrorMessage('This command only works on signalsets or commands JSON files');
+        return;
+      }
+
+      // Import jsonc-parser
+      const jsonc = require('jsonc-parser');
+      const text = document.getText();
+      const rootNode = jsonc.parseTree(text);
+
+      if (!rootNode || rootNode.type !== 'object') {
+        vscode.window.showErrorMessage('Invalid JSON structure');
+        return;
+      }
+
+      const commandsProperty = jsonc.findNodeAtLocation(rootNode, ['commands']);
+      if (!commandsProperty || commandsProperty.type !== 'array' || !commandsProperty.children) {
+        vscode.window.showErrorMessage('No commands array found in document');
+        return;
+      }
+
+      // Collect all optimization operations
+      const optimizations: Array<{
+        range: vscode.Range;
+        optimizedFilter: any;
+        isNew: boolean;
+      }> = [];
+
+      // Import necessary utilities
+      const { getGenerations } = require('./utils/generations');
+      const { GenerationSet } = require('./utils/generationsCore');
+      const { calculateDebugFilter } = require('./utils/debugFilterCalculator');
+      const { createSimpleCommandId, normalizeCommandId, stripReceiveFilter } = require('./utils/commandSupportUtils');
+      const { batchLoadAllCommandSupport } = require('./utils/commandSupportUtils');
+
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!workspaceRoot) {
+        vscode.window.showErrorMessage('No workspace folder found');
+        return;
+      }
+
+      // Load batch support data
+      const batchSupportData = commandSupportCache.getBatchCommandSupport(workspaceRoot) ||
+                                await batchLoadAllCommandSupport(workspaceRoot, commandSupportCache);
+      if (batchSupportData) {
+        commandSupportCache.setBatchCommandSupport(workspaceRoot, batchSupportData);
+      } else {
+        vscode.window.showErrorMessage('Failed to load command support data');
+        return;
+      }
+
+      const generations = await getGenerations(workspaceRoot);
+      if (!generations || generations.length === 0) {
+        vscode.window.showErrorMessage('No generation data found');
+        return;
+      }
+
+      const generationSet = new GenerationSet(generations);
+
+      // Scan all commands for optimization opportunities
+      for (const commandNode of commandsProperty.children) {
+        if (commandNode.type === 'object' && commandNode.children) {
+          let hdr: string | undefined;
+          let cmdProperty: any;
+          let rax: string | undefined;
+          let hasDebug = false;
+          let existingDbgFilter: any = null;
+          let commandFilter: any = null;
+
+          for (const prop of commandNode.children) {
+            if (prop.type === 'property' && prop.children && prop.children.length === 2) {
+              const keyNode = prop.children[0];
+              const valueNode = prop.children[1];
+
+              if (keyNode.value === 'hdr') {
+                hdr = valueNode.value as string;
+              }
+              if (keyNode.value === 'cmd') {
+                cmdProperty = valueNode;
+              }
+              if (keyNode.value === 'rax') {
+                rax = valueNode.value as string;
+              }
+              if (keyNode.value === 'dbg' && valueNode.value === true) {
+                hasDebug = true;
+              }
+              if (keyNode.value === 'dbgfilter') {
+                try {
+                  const filterText = document.getText().substring(valueNode.offset, valueNode.offset + valueNode.length);
+                  existingDbgFilter = JSON.parse(filterText);
+                } catch (e) {
+                  // Ignore parse errors
+                }
+              }
+              if (keyNode.value === 'filter') {
+                try {
+                  const filterText = document.getText().substring(valueNode.offset, valueNode.offset + valueNode.length);
+                  commandFilter = JSON.parse(filterText);
+                } catch (e) {
+                  // Ignore parse errors
+                }
+              }
+            }
+          }
+
+          // Check if this command has dbg: true and either needs a new debug filter or has one that can be optimized
+          if (hasDebug && hdr && cmdProperty) {
+            let cmdValue: string | Record<string, string> | undefined;
+
+            if (cmdProperty.type === 'object' && cmdProperty.children && cmdProperty.children[0] && cmdProperty.children[0].children) {
+              const firstCmdProp = cmdProperty.children[0];
+              const cmdKeyNode = firstCmdProp.children![0];
+              const cmdValueNode = firstCmdProp.children![1];
+              cmdValue = { [cmdKeyNode.value as string]: cmdValueNode.value as string };
+            } else if (cmdProperty.type === 'string') {
+              cmdValue = cmdProperty.value as string;
+            }
+
+            if (cmdValue) {
+              const commandId = createSimpleCommandId(hdr, cmdValue, rax);
+              const normalizedCommandId = normalizeCommandId(commandId);
+              const normalizedStripFilter = normalizeCommandId(stripReceiveFilter(commandId));
+              const supportData = batchSupportData.get(normalizedCommandId) || batchSupportData.get(normalizedStripFilter) || { supported: [], unsupported: [] };
+              const supportedYears = supportData.supported;
+
+              if (supportedYears.length > 0) {
+                const calculatedFilter = calculateDebugFilter(supportedYears, generationSet, commandFilter);
+
+                // Check if we should add/update the filter
+                // - If no existing filter and calculated filter is not empty, add it
+                // - If existing filter differs from calculated filter, update it
+                const shouldApply = !existingDbgFilter
+                  ? (calculatedFilter && Object.keys(calculatedFilter).length > 0)
+                  : (JSON.stringify(existingDbgFilter) !== JSON.stringify(calculatedFilter || {}));
+
+                if (shouldApply) {
+                  const range = new vscode.Range(
+                    document.positionAt(commandNode.offset),
+                    document.positionAt(commandNode.offset + commandNode.length)
+                  );
+
+                  optimizations.push({
+                    range,
+                    optimizedFilter: calculatedFilter,
+                    isNew: !existingDbgFilter
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (optimizations.length === 0) {
+        vscode.window.showInformationMessage('No debug filter optimizations found');
+        return;
+      }
+
+      // Ask user for confirmation
+      const action = await vscode.window.showInformationMessage(
+        `Found ${optimizations.length} debug filter(s) that can be optimized. Apply all optimizations?`,
+        'Yes',
+        'No'
+      );
+
+      if (action !== 'Yes') {
+        return;
+      }
+
+      // Apply all optimizations in a single edit operation (from bottom to top to preserve positions)
+      await editor.edit(editBuilder => {
+        // Sort by range start position (descending) to apply from bottom to top
+        const sortedOptimizations = [...optimizations].sort((a, b) =>
+          b.range.start.compareTo(a.range.start)
+        );
+
+        for (const opt of sortedOptimizations) {
+          let commandText = document.getText(opt.range);
+
+          // Format the optimized filter with spaces around braces to match style
+          const formatDebugFilter = (filter: any): string => {
+            const parts: string[] = [];
+            if (filter.to !== undefined) parts.push(`"to": ${filter.to}`);
+            if (filter.years !== undefined) parts.push(`"years": [${filter.years.join(', ')}]`);
+            if (filter.from !== undefined) parts.push(`"from": ${filter.from}`);
+            return `{ ${parts.join(', ')} }`;
+          };
+
+          const shouldRemoveFilter = opt.optimizedFilter === undefined ||
+                                      opt.optimizedFilter === null ||
+                                      (typeof opt.optimizedFilter === 'object' && Object.keys(opt.optimizedFilter).length === 0);
+
+          if (shouldRemoveFilter) {
+            // Remove the debug filter entirely (if it exists)
+            if (!opt.isNew) {
+              commandText = commandText.replace(/,\s*"dbgfilter"\s*:\s*\{[^}]*\}(?=\s*[,}])/g, '');
+              commandText = commandText.replace(/"dbgfilter"\s*:\s*\{[^}]*\}\s*,/g, '');
+            }
+            // Also remove dbg: true since filter would be empty
+            commandText = commandText.replace(/,\s*"dbg"\s*:\s*true(?=\s*[,}])/g, '');
+            commandText = commandText.replace(/"dbg"\s*:\s*true\s*,/g, '');
+          } else if (opt.isNew) {
+            // Add new debug filter - need to insert it and remove dbg: true
+            const optimizedFilterJson = formatDebugFilter(opt.optimizedFilter);
+
+            // Remove dbg: true
+            commandText = commandText.replace(/,\s*"dbg"\s*:\s*true(?=\s*[,}])/g, '');
+            commandText = commandText.replace(/"dbg"\s*:\s*true\s*,/g, '');
+
+            // Find where to insert the dbgfilter - after command properties but before signals
+            const signalsMatch = commandText.match(/,\s*"signals"\s*:/);
+
+            if (signalsMatch && signalsMatch.index !== undefined) {
+              // Insert before the "signals" property
+              const insertPosition = signalsMatch.index;
+              const beforeSignals = commandText.substring(0, insertPosition);
+              const fromSignals = commandText.substring(insertPosition);
+              commandText = beforeSignals + `, "dbgfilter": ${optimizedFilterJson}` + fromSignals;
+            } else {
+              // Fallback: insert before the closing brace if no signals found
+              const closingBraceIndex = commandText.lastIndexOf('}');
+              if (closingBraceIndex !== -1) {
+                const beforeClosingBrace = commandText.substring(0, closingBraceIndex).trim();
+                const needsComma = beforeClosingBrace.endsWith('"') || beforeClosingBrace.endsWith('}') || beforeClosingBrace.endsWith(']');
+                const formattedDebugFilter = `${needsComma ? ', ' : ''}"dbgfilter": ${optimizedFilterJson}`;
+                const beforeBrace = commandText.substring(0, closingBraceIndex);
+                const afterBrace = commandText.substring(closingBraceIndex);
+                commandText = beforeBrace + formattedDebugFilter + afterBrace;
+              }
+            }
+          } else {
+            // Update existing debug filter
+            const optimizedFilterJson = formatDebugFilter(opt.optimizedFilter);
+            commandText = commandText.replace(/"dbgfilter"\s*:\s*\{[^}]*\}/g, `"dbgfilter": ${optimizedFilterJson}`);
+          }
+
+          editBuilder.replace(opt.range, commandText);
+        }
+      });
+
+      vscode.window.showInformationMessage(`Successfully optimized ${optimizations.length} debug filter(s)`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to optimize debug filters: ${error}`);
+      console.error('Error in optimizeAllDebugFilters:', error);
+    }
+  });
+
   // Register test commands for running and debugging tests
   const testCommands = registerTestCommands(context);
   console.log('Registered commands for running and debugging tests');
@@ -314,6 +573,7 @@ export function activate(context: vscode.ExtensionContext) {
     optimizeDebugFilterCommand,
     optimizeFilterCommand,
     addRaxFilterCommand,
+    optimizeAllDebugFiltersCommand,
     ...testCommands,
     testExplorer,
     testExecutionSubscription,
