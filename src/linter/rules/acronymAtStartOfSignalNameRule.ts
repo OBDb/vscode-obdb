@@ -1,58 +1,61 @@
 import * as jsonc from 'jsonc-parser';
 import { ILinterRule, LinterRuleConfig, LintResult, LintSeverity, Signal, SignalGroup } from './rule';
 
-// Common automotive acronyms that should not start a signal name
-const COMMON_ACRONYMS = [
-  'ABS', // Anti-lock Braking System
-  'ACC', // Adaptive Cruise Control
-  'ACM', // Audio Control Module
-  'ACU', // Airbag Control Unit
-  'ADAS', // Advanced Driver Assistance Systems
-  'AFR', // Air-Fuel Ratio
-  'ATF', // Automatic Transmission Fluid
-  'BCM', // Body Control Module
-  'BMS', // Battery Management System
-  'CAN', // Controller Area Network
-  'CCM', // Climate Control Module
-  'CDI', // Capacitor Discharge Ignition
-  'CVT', // Continuously Variable Transmission
-  'CVVT', // Continuously Variable Valve Timing
-  'DPF', // Diesel Particulate Filter
-  'DSC', // Dynamic Stability Control
-  'ECM', // Engine Control Module
-  'ECU', // Electronic Control Unit
-  'EGR', // Exhaust Gas Recirculation
-  'EPS', // Electric Power Steering
-  'ESC', // Electronic Stability Control
-  'ESP', // Electronic Stability Program
-  'ETC', // Electronic Throttle Control
-  'GPS', // Global Positioning System
-  'HVAC', // Heating, Ventilation, and Air Conditioning
-  'ICE', // Internal Combustion Engine
-  'ICM', // Ignition Control Module
-  'IMA', // Integrated Motor Assist
-  'IMMO', // Immobilizer
-  'IPC', // Instrument Panel Cluster
-  'LCA', // Lane Change Assist
-  'LKA', // Lane Keep Assist
-  'MAF', // Mass Air Flow
-  'MAP', // Manifold Absolute Pressure
-  'OBD', // On-Board Diagnostics
-  'OCS', // Occupant Classification System
-  'PCM', // Powertrain Control Module
-  'PDC', // Park Distance Control
-  'RCM', // Restraint Control Module
-  'SAS', // Steering Angle Sensor
-  'SRS', // Supplemental Restraint System
-  'TCM', // Transmission Control Module
-  'TCS', // Traction Control System
-  'TPS', // Throttle Position Sensor
-  'TPMS', // Tire Pressure Monitoring System
-  'VIN', // Vehicle Identification Number
-  'VSC', // Vehicle Stability Control
-  'VVT', // Variable Valve Timing
+// Map of automotive acronyms to their full expanded names
+const ACRONYM_EXPANSIONS: Record<string, string> = {
+  'ABS': 'Anti-lock braking system',
+  'ACC': 'Adaptive cruise control',
+  'ACM': 'Audio control module',
+  'ACU': 'Airbag control unit',
+  'ADAS': 'Advanced driver assistance systems',
+  'AFR': 'Air-fuel ratio',
+  'ATF': 'Automatic transmission fluid',
+  'BCM': 'Body control module',
+  'BMS': 'Battery management system',
+  'CAN': 'Controller area network',
+  'CCM': 'Climate control module',
+  'CDI': 'Capacitor discharge ignition',
+  'CVT': 'Continuously variable transmission',
+  'CVVT': 'Continuously variable valve timing',
+  'DPF': 'Diesel particulate filter',
+  'DSC': 'Dynamic stability control',
+  'ECM': 'Engine control module',
+  'ECU': 'Electronic control unit',
+  'EGR': 'Exhaust gas recirculation',
+  'EPS': 'Electric power steering',
+  'ESC': 'Electronic stability control',
+  'ESP': 'Electronic stability program',
+  'ETC': 'Electronic throttle control',
+  'GPS': 'Global positioning system',
+  'HVAC': 'Heating, ventilation, and air conditioning',
+  'ICE': 'Internal combustion engine',
+  'ICM': 'Ignition control module',
+  'IMA': 'Integrated motor assist',
+  'IMMO': 'Immobilizer',
+  'IPC': 'Instrument panel cluster',
+  'LCA': 'Lane change assist',
+  'LKA': 'Lane keep assist',
+  'MAF': 'Mass air flow',
+  'MAP': 'Manifold absolute pressure',
+  'OBD': 'On-board diagnostics',
+  'OCS': 'Occupant classification system',
+  'PCM': 'Powertrain control module',
+  'PDC': 'Park distance control',
+  'RCM': 'Restraint control module',
+  'SAS': 'Steering angle sensor',
+  'SRS': 'Supplemental restraint system',
+  'TCM': 'Transmission control module',
+  'TCS': 'Traction control system',
+  'TPS': 'Throttle position sensor',
+  'TPMS': 'Tire pressure monitoring system',
+  'VIN': 'Vehicle identification number',
+  'VSC': 'Vehicle stability control',
+  'VVT': 'Variable valve timing',
   // Add more acronyms as needed
-];
+};
+
+// Get list of acronyms from the expansions map
+const COMMON_ACRONYMS = Object.keys(ACRONYM_EXPANSIONS);
 
 export class AcronymAtStartOfSignalNameRule implements ILinterRule {
   private config: LinterRuleConfig = {
@@ -82,15 +85,58 @@ export class AcronymAtStartOfSignalNameRule implements ILinterRule {
     }
 
     for (const acronym of COMMON_ACRONYMS) {
-      if (signalName.toUpperCase().startsWith(acronym + ' ') || signalName.toUpperCase().startsWith(acronym + '_') || signalName.toUpperCase() === acronym) {
+      const upperSignalName = signalName.toUpperCase();
+      const startsWithAcronymSpace = upperSignalName.startsWith(acronym + ' ');
+      const startsWithAcronymUnderscore = upperSignalName.startsWith(acronym + '_');
+      const isExactAcronym = upperSignalName === acronym;
+
+      if (startsWithAcronymSpace || startsWithAcronymUnderscore || isExactAcronym) {
+        // Get the expansion for this acronym
+        const expansion = ACRONYM_EXPANSIONS[acronym];
+
+        // Create the suggested name by replacing the acronym with its expansion
+        let suggestedName: string;
+        if (startsWithAcronymSpace) {
+          // Replace "ATF temperature" with "Automatic transmission fluid temperature"
+          const remainder = signalName.substring(acronym.length + 1); // +1 for the space
+          suggestedName = this.toSentenceCase(expansion) + ' ' + remainder;
+        } else if (startsWithAcronymUnderscore) {
+          // Replace "ATF_temperature" with "Automatic transmission fluid temperature"
+          const remainder = signalName.substring(acronym.length + 1); // +1 for the underscore
+          suggestedName = this.toSentenceCase(expansion) + ' ' + remainder.replace(/_/g, ' ');
+        } else {
+          // Just the acronym itself
+          suggestedName = this.toSentenceCase(expansion);
+        }
+
         return {
           ruleId: this.config.id,
           message: `Signal name '${signalName}' starts with an acronym '${acronym}'. Use the path property to organize signals. Consider removing the acronym or rephrasing the name.`,
           node: nameNode,
+          suggestion: {
+            title: `Expand acronym: "${acronym}" → "${expansion}"`,
+            edits: [{
+              newText: `"${suggestedName}"`,
+              offset: nameNode.offset,
+              length: nameNode.length
+            }]
+          }
         };
       }
     }
 
     return null;
+  }
+
+  /**
+   * Converts a string to sentence case (first letter capitalized, rest lowercase)
+   * @param text The text to convert
+   * @returns The text in sentence case
+   */
+  private toSentenceCase(text: string): string {
+    if (!text || text.length === 0) {
+      return text;
+    }
+    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
   }
 }

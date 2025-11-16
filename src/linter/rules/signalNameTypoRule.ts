@@ -17,7 +17,7 @@ export class SignalNameTypoRule implements ILinterRule {
     'abs', 'esp', 'cvt', 'rpm', 'led', 'obd', 'ecu', 'pcm', 'bcm', 'tcm',
     'vin', 'dtc', 'pid', 'mil', 'egr', 'dpf', 'def', 'scr', 'nox', 'hc',
     'co', 'co2', 'o2', 'afr', 'maf', 'map', 'tps', 'iac', 'evap', 'canp',
-    'vvt', 'cam', 'crank', 'knock', 'egt', 'iat', 'ect', 'cht', 'oil',
+    'vvt', 'vtec', 'cam', 'crank', 'knock', 'egt', 'iat', 'ect', 'cht', 'oil',
     'psig', 'psi', 'kpa', 'mph', 'kmh', 'gph', 'lph', 'mpg', 'lpkm',
     'deg', 'temp', 'vol', 'amp', 'ohm', 'hz', 'kwh', 'btuh', 'cfm',
     'api', 'can', 'lin', 'pwm', 'gpio', 'adc', 'dac', 'spi', 'i2c',
