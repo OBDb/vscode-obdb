@@ -8,6 +8,7 @@ import {
     getGenerations,
     getGenerationForModelYear
 } from '../utils/generations';
+import { PerformanceMonitor } from '../utils/performanceMonitor';
 
 /**
  * A class that manages test items in the VS Code Test Explorer
@@ -107,10 +108,15 @@ export class TestExplorerProvider {
      * Loads all test files in the workspace
      */
     private async loadAllTestFiles() {
+        const opId = `test-explorer-load-all-${Date.now()}`;
+        PerformanceMonitor.startTimer(opId, 'TestExplorerProvider.loadAllTestFiles', {});
+
         if (!vscode.workspace.workspaceFolders) {
+            PerformanceMonitor.endTimer(opId, 'TestExplorerProvider.loadAllTestFiles', { result: 'no-workspace' });
             return;
         }
 
+        let totalFiles = 0;
         for (const workspaceFolder of vscode.workspace.workspaceFolders) {
             const pattern = new vscode.RelativePattern(
                 workspaceFolder,
@@ -118,11 +124,17 @@ export class TestExplorerProvider {
             );
 
             const files = await vscode.workspace.findFiles(pattern);
+            totalFiles += files.length;
 
             for (const file of files) {
                 await this.addTestItemsFromFile(file);
             }
         }
+
+        PerformanceMonitor.endTimer(opId, 'TestExplorerProvider.loadAllTestFiles', {
+            result: 'success',
+            filesLoaded: totalFiles
+        });
     }
 
     /**
@@ -192,11 +204,17 @@ export class TestExplorerProvider {
      * @param uri URI of the YAML file
      */
     private async addTestItemsFromFile(uri: vscode.Uri) {
+        const opId = `test-explorer-add-${Date.now()}-${Math.random()}`;
+        PerformanceMonitor.startTimer(opId, 'TestExplorerProvider.addTestItemsFromFile', {
+            filePath: uri.fsPath
+        });
+
         try {
             const filePath = uri.fsPath;
 
             // Check if this is a test file
             if (!this.isTestFile(filePath)) {
+                PerformanceMonitor.endTimer(opId, 'TestExplorerProvider.addTestItemsFromFile', { result: 'not-test-file' });
                 return;
             }
 
@@ -205,11 +223,15 @@ export class TestExplorerProvider {
             const content = document.getText();
 
             // Parse YAML content with source positions enabled
+            const parseStartTime = performance.now();
             const yamlDoc = YAML.parseDocument(content, { keepSourceTokens: true });
             const yamlContent = yamlDoc.toJSON();
+            const parseTime = performance.now() - parseStartTime;
+            PerformanceMonitor.logMetric('TestExplorerProvider.parseYAML', parseTime, { filePath });
 
             // Check if this has the expected structure for a test file
             if (!yamlContent || !yamlContent.test_cases || !Array.isArray(yamlContent.test_cases)) {
+                PerformanceMonitor.endTimer(opId, 'TestExplorerProvider.addTestItemsFromFile', { result: 'invalid-structure' });
                 return;
             }
 
@@ -233,7 +255,19 @@ export class TestExplorerProvider {
                 this.addTestWithModelYearHierarchy(uri, filePath, modelYear, commandId, yamlContent);
             }
 
+            PerformanceMonitor.endTimer(opId, 'TestExplorerProvider.addTestItemsFromFile', {
+                result: 'success',
+                modelYear,
+                commandId,
+                testCount: yamlContent.test_cases.length,
+                hasGeneration: !!generation
+            });
+
         } catch (error) {
+            PerformanceMonitor.endTimer(opId, 'TestExplorerProvider.addTestItemsFromFile', {
+                result: 'error',
+                error: String(error)
+            });
             console.error("Error adding test items from file:", error);
         }
     }

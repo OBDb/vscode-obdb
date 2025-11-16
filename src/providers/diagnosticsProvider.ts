@@ -7,16 +7,22 @@ import { generateCommandIdFromDefinition } from '../utils/commandParser';
 import { SignalLinter } from '../linter/signalLinter';
 import { SignalLinterCodeActionProvider } from './signalLinterCodeActionProvider';
 import { Signal, SignalGroup } from '../linter/rules/rule';
+import { PerformanceMonitor } from '../utils/performanceMonitor';
+import { CommandSupportCache } from '../caches/commands/commandSupportCache';
+import { batchLoadAllCommandSupport, normalizeCommandId, stripReceiveFilter } from '../utils/commandSupportUtils';
 
 let diagnosticCollection: vscode.DiagnosticCollection;
 const signalLinter = new SignalLinter();
 const signalLinterCodeActionProvider = new SignalLinterCodeActionProvider();
+let commandSupportCacheInstance: CommandSupportCache;
 
 /**
  * Creates a diagnostics provider for marking unsupported commands
+ * @param cache The cache instance to use for command support lookups
  * @returns A disposable diagnostics provider registration
  */
-export function createDiagnosticsProvider(): vscode.Disposable {
+export function createDiagnosticsProvider(cache: CommandSupportCache): vscode.Disposable {
+  commandSupportCacheInstance = cache;
   diagnosticCollection = vscode.languages.createDiagnosticCollection('obdb-commands');
 
   const disposables: vscode.Disposable[] = [];
@@ -66,8 +72,15 @@ export function createDiagnosticsProvider(): vscode.Disposable {
  * Updates diagnostics for a document
  */
 async function updateDiagnostics(document: vscode.TextDocument): Promise<void> {
+  const opId = `diagnostics-${Date.now()}-${Math.random()}`;
+  PerformanceMonitor.startTimer(opId, 'DiagnosticsProvider.updateDiagnostics', {
+    fileName: document.fileName,
+    languageId: document.languageId
+  });
+
   // Skip if document is not a JSON file
   if (document.languageId !== 'json') {
+    PerformanceMonitor.endTimer(opId, 'DiagnosticsProvider.updateDiagnostics', { result: 'not-json' });
     return;
   }
 
@@ -76,12 +89,35 @@ async function updateDiagnostics(document: vscode.TextDocument): Promise<void> {
     const lintResults: any[] = [];
 
     const text = document.getText();
+
+    const parseStartTime = performance.now();
     const rootNode = jsonc.parseTree(text);
+    const parseTime = performance.now() - parseStartTime;
+    PerformanceMonitor.logMetric('DiagnosticsProvider.parseTree', parseTime, { fileName: document.fileName });
 
     if (!rootNode) {
       diagnosticCollection.set(document.uri, []);
       signalLinterCodeActionProvider.clearLintResults(document.uri.toString());
+      PerformanceMonitor.endTimer(opId, 'DiagnosticsProvider.updateDiagnostics', { result: 'no-root-node' });
       return;
+    }
+
+    // Batch load ALL command support data upfront (same optimization as CodeLensProvider)
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    let batchSupportData: Map<string, { supported: string[], unsupported: string[] }> | null = null;
+    if (workspaceRoot) {
+      const batchLoadStartTime = performance.now();
+      batchSupportData = commandSupportCacheInstance.getBatchCommandSupport(workspaceRoot);
+      if (!batchSupportData) {
+        batchSupportData = await batchLoadAllCommandSupport(workspaceRoot, commandSupportCacheInstance);
+        commandSupportCacheInstance.setBatchCommandSupport(workspaceRoot, batchSupportData);
+      }
+      const batchLoadTime = performance.now() - batchLoadStartTime;
+      PerformanceMonitor.logMetric('DiagnosticsProvider.batchLoadCommandSupport', batchLoadTime, {
+        fileName: document.fileName,
+        commandCount: batchSupportData.size,
+        cached: batchLoadTime < 5
+      });
     }
 
     // Pre-pass: Collect all signal and signal group IDs
@@ -183,9 +219,20 @@ async function updateDiagnostics(document: vscode.TextDocument): Promise<void> {
           const commandDefinition = jsonc.getNodeValue(commandNode);
           const commandId = generateCommandIdFromDefinition(commandDefinition);
 
-          // Check if command is unsupported
-          const isSupportedByAnyYear = await isCommandSupported(commandId);
-          const isUnsupportedByAnyYear = await isCommandUnsupported(commandId);
+          // Use batch-loaded data instead of individual lookups (O(1) instead of O(m))
+          let isSupportedByAnyYear = false;
+          let isUnsupportedByAnyYear = false;
+
+          if (batchSupportData) {
+            const normalizedCommandId = normalizeCommandId(commandId);
+            const normalizedStripFilter = normalizeCommandId(stripReceiveFilter(commandId));
+            const supportData = batchSupportData.get(normalizedCommandId) || batchSupportData.get(normalizedStripFilter);
+
+            if (supportData) {
+              isSupportedByAnyYear = supportData.supported.length > 0;
+              isUnsupportedByAnyYear = supportData.unsupported.length > 0;
+            }
+          }
 
           // Only mark commands that are not supported by any model year
           // and are explicitly marked as unsupported in at least one model year
@@ -269,10 +316,20 @@ async function updateDiagnostics(document: vscode.TextDocument): Promise<void> {
 
     // Update diagnostics
     diagnosticCollection.set(document.uri, diagnostics);
+
+    PerformanceMonitor.endTimer(opId, 'DiagnosticsProvider.updateDiagnostics', {
+      result: 'success',
+      diagnosticsCount: diagnostics.length,
+      lintResultsCount: lintResults.length
+    });
   } catch (err) {
     console.error('Error updating diagnostics:', err);
     diagnosticCollection.set(document.uri, []);
     signalLinterCodeActionProvider.clearLintResults(document.uri.toString());
+    PerformanceMonitor.endTimer(opId, 'DiagnosticsProvider.updateDiagnostics', {
+      result: 'error',
+      error: String(err)
+    });
   }
 }
 

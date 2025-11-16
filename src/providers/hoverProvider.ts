@@ -10,6 +10,7 @@ import { groupModelYearsByGeneration } from '../utils/generations';
 import { numberToExcelColumn, bixToByte } from '../utils/bixConverter';
 import { getSupportedModelYearsForCommand, getUnsupportedModelYearsForCommand, stripReceiveFilter, createSimpleCommandId } from '../utils/commandSupportUtils';
 import { CommandSupportCache } from '../caches/commands/commandSupportCache';
+import { PerformanceMonitor } from '../utils/performanceMonitor';
 
 /**
  * Creates a hover provider for JSON files
@@ -19,10 +20,19 @@ import { CommandSupportCache } from '../caches/commands/commandSupportCache';
 export function createHoverProvider(cache: CommandSupportCache): vscode.Disposable {
   return vscode.languages.registerHoverProvider('json', {
     async provideHover(document, position, token) {
-      // Check if we're in a JSON file that's in the signalsets directory
-      if (!document.fileName.includes('signalsets') && !document.fileName.includes('commands')) {
-        return undefined;
-      }
+      const opId = `hover-${Date.now()}-${Math.random()}`;
+      PerformanceMonitor.startTimer(opId, 'HoverProvider.provideHover', {
+        fileName: document.fileName,
+        line: position.line,
+        char: position.character
+      });
+
+      try {
+        // Check if we're in a JSON file that's in the signalsets directory
+        if (!document.fileName.includes('signalsets') && !document.fileName.includes('commands')) {
+          PerformanceMonitor.endTimer(opId, 'HoverProvider.provideHover', { result: 'not-applicable' });
+          return undefined;
+        }
 
       // Create the hovercard content
       const markdownContent = new vscode.MarkdownString();
@@ -69,6 +79,7 @@ export function createHoverProvider(cache: CommandSupportCache): vscode.Disposab
           }
 
           // Return the hover for signal ID
+          PerformanceMonitor.endTimer(opId, 'HoverProvider.provideHover', { result: 'signal-id', signalId: word });
           return new vscode.Hover(markdownContent);
         }
       }
@@ -112,6 +123,11 @@ export function createHoverProvider(cache: CommandSupportCache): vscode.Disposab
             }
           }
 
+          PerformanceMonitor.endTimer(opId, 'HoverProvider.provideHover', {
+            result: 'signal-group',
+            groupId: signalGroupId,
+            matchCount: matchingSignals.length
+          });
           return new vscode.Hover(markdownContent);
         }
       }
@@ -139,6 +155,11 @@ export function createHoverProvider(cache: CommandSupportCache): vscode.Disposab
           // Create hover content
           markdownContent.appendMarkdown(`**Byte**: \`${byteValue}\` / \`${alphaEquivalent}\``);
 
+          PerformanceMonitor.endTimer(opId, 'HoverProvider.provideHover', {
+            result: 'bix-value',
+            bixValue,
+            byteValue
+          });
           return new vscode.Hover(markdownContent);
         }
       }
@@ -233,12 +254,26 @@ export function createHoverProvider(cache: CommandSupportCache): vscode.Disposab
               markdownContent.appendMarkdown(`### Model Year Support\n\nNo support information available.\n\n`);
             }
 
+            PerformanceMonitor.endTimer(opId, 'HoverProvider.provideHover', {
+              result: 'command-definition',
+              commandId,
+              supportedCount: supportedYears.length,
+              unsupportedCount: unsupportedYears.length
+            });
             return new vscode.Hover(markdownContent);
           }
         }
       }
 
+      PerformanceMonitor.endTimer(opId, 'HoverProvider.provideHover', { result: 'no-match' });
       return undefined;
+      } catch (error) {
+        PerformanceMonitor.endTimer(opId, 'HoverProvider.provideHover', {
+          result: 'error',
+          error: String(error)
+        });
+        throw error;
+      }
     }
   });
 }

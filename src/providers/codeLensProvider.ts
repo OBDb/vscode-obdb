@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import * as jsonc from 'jsonc-parser';
-import { getCommandSupportInfo, generateDebugFilterSuggestion, createSimpleCommandId, optimizeDebugFilter } from '../utils/commandSupportUtils';
+import { getCommandSupportInfo, generateDebugFilterSuggestion, createSimpleCommandId, optimizeDebugFilter, batchLoadAllCommandSupport, normalizeCommandId, stripReceiveFilter } from '../utils/commandSupportUtils';
 import { groupModelYearsByGeneration, formatYearsAsRanges, getGenerationForModelYear } from '../utils/generations';
 import { CommandSupportCache } from '../caches/commands/commandSupportCache';
+import { PerformanceMonitor } from '../utils/performanceMonitor';
 
 interface DocumentCodeLensCache {
   version: number;
@@ -129,27 +130,54 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   async provideCodeLenses(document: vscode.TextDocument, token: vscode.CancellationToken): Promise<vscode.CodeLens[]> {
-    if (!document.fileName.includes('signalsets') && !document.fileName.includes('commands')) {
-      return [];
-    }
+    const opId = `codelens-${Date.now()}-${Math.random()}`;
+    PerformanceMonitor.startTimer(opId, 'CodeLensProvider.provideCodeLenses', {
+      fileName: document.fileName,
+      version: document.version
+    });
 
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!workspaceRoot) {
-      return [];
-    }
+    try {
+      if (!document.fileName.includes('signalsets') && !document.fileName.includes('commands')) {
+        PerformanceMonitor.endTimer(opId, 'CodeLensProvider.provideCodeLenses', { result: 'not-applicable' });
+        return [];
+      }
 
-    // Check if we have a cached version for this document
-    const documentUri = document.uri.toString();
-    const cachedEntry = this.documentCache.get(documentUri);
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!workspaceRoot) {
+        PerformanceMonitor.endTimer(opId, 'CodeLensProvider.provideCodeLenses', { result: 'no-workspace' });
+        return [];
+      }
 
-    if (cachedEntry && cachedEntry.version === document.version) {
-      return cachedEntry.codeLenses;
-    }
+      // Check if we have a cached version for this document
+      const documentUri = document.uri.toString();
+      const cachedEntry = this.documentCache.get(documentUri);
+
+      if (cachedEntry && cachedEntry.version === document.version) {
+        PerformanceMonitor.endTimer(opId, 'CodeLensProvider.provideCodeLenses', {
+          result: 'cache-hit',
+          codeLensCount: cachedEntry.codeLenses.length
+        });
+        return cachedEntry.codeLenses;
+      }
 
     const codeLenses: vscode.CodeLens[] = [];
 
     const text = document.getText();
     const rootNode = jsonc.parseTree(text);
+
+    // Batch load ALL command support data upfront (O(m) where m = number of years)
+    const batchLoadStartTime = performance.now();
+    let batchSupportData = this.cache.getBatchCommandSupport(workspaceRoot);
+    if (!batchSupportData) {
+      batchSupportData = await batchLoadAllCommandSupport(workspaceRoot, this.cache);
+      this.cache.setBatchCommandSupport(workspaceRoot, batchSupportData);
+    }
+    const batchLoadTime = performance.now() - batchLoadStartTime;
+    PerformanceMonitor.logMetric('CodeLensProvider.batchLoadCommandSupport', batchLoadTime, {
+      fileName: document.fileName,
+      commandCount: batchSupportData.size,
+      cached: batchLoadTime < 5
+    });
 
     if (rootNode && rootNode.type === 'object') {
       const commandsProperty = jsonc.findNodeAtLocation(rootNode, ['commands']);
@@ -208,7 +236,12 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
                   document.positionAt(commandNode.offset + commandNode.length)
                 );
 
-                const { supported: supportedYears, unsupported: unsupportedYears } = await getCommandSupportInfo(commandId, workspaceRoot, this.cache);
+                // Use batch-loaded data instead of individual lookups (O(1) instead of O(m))
+                const normalizedCommandId = normalizeCommandId(commandId);
+                const normalizedStripFilter = normalizeCommandId(stripReceiveFilter(commandId));
+                const supportData = batchSupportData.get(normalizedCommandId) || batchSupportData.get(normalizedStripFilter) || { supported: [], unsupported: [] };
+                const supportedYears = supportData.supported;
+                const unsupportedYears = supportData.unsupported;
 
                 // Filter out any years from unsupportedYears that are also in supportedYears
                 const finalUnsupportedYears = unsupportedYears.filter(year => !supportedYears.includes(year));
@@ -309,13 +342,26 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
       }
     }
 
-    // Cache the result
-    this.documentCache.set(documentUri, {
-      version: document.version,
-      codeLenses: codeLenses
-    });
+      // Cache the result
+      this.documentCache.set(documentUri, {
+        version: document.version,
+        codeLenses: codeLenses
+      });
 
-    return codeLenses;
+      PerformanceMonitor.endTimer(opId, 'CodeLensProvider.provideCodeLenses', {
+        result: 'computed',
+        codeLensCount: codeLenses.length,
+        commandCount: codeLenses.filter(cl => cl.command?.title.includes('Supported')).length
+      });
+
+      return codeLenses;
+    } catch (error) {
+      PerformanceMonitor.endTimer(opId, 'CodeLensProvider.provideCodeLenses', {
+        result: 'error',
+        error: String(error)
+      });
+      throw error;
+    }
   }
 }
 
