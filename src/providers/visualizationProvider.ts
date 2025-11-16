@@ -13,10 +13,5 @@ export function initializeVisualizationProvider(context: vscode.ExtensionContext
     provider
   );
 
-  // Register command to manually refresh the workbench
-  const refreshCommand = vscode.commands.registerCommand('obdb.showBitmapVisualization', () => {
-    provider.refresh();
-  });
-
-  return vscode.Disposable.from(registration, provider, refreshCommand);
+  return vscode.Disposable.from(registration, provider);
 }
