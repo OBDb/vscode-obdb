@@ -189,25 +189,7 @@ async function updateDiagnostics(document: vscode.TextDocument): Promise<void> {
         const hdrNode = findNodeAtLocation(commandNode, ["hdr"]);
         const cmdNode = findNodeAtLocation(commandNode, ["cmd"]);
         const raxNode = findNodeAtLocation(commandNode, ["rax"]);
-        const dbgNode = findNodeAtLocation(commandNode, ["dbg"]);
         const signalsNode = findNodeAtLocation(commandNode, ["signals"]);
-
-        // Check for debug commands and add warning
-        if (dbgNode && dbgNode.type === 'boolean' && jsonc.getNodeValue(dbgNode) === true) {
-          // Get the exact position of the "dbg": true in the document
-          if (dbgNode.offset !== undefined && dbgNode.length !== undefined) {
-            const startPos = document.positionAt(dbgNode.offset);
-            const endPos = document.positionAt(dbgNode.offset + dbgNode.length);
-
-            const diagnostic = new vscode.Diagnostic(
-              new vscode.Range(startPos, endPos),
-              "This is a debug command, please graduate it once it's confirmed to work",
-              vscode.DiagnosticSeverity.Warning
-            );
-            diagnostic.code = 'obdb-debug-command';
-            diagnostics.push(diagnostic);
-          }
-        }
 
         // Process command validation
         if (hdrNode && cmdNode && hdrNode.type === 'string') {
