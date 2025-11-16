@@ -21,6 +21,7 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
   private testFileWatcher: vscode.FileSystemWatcher | undefined;
   private invalidationTimer: NodeJS.Timeout | undefined;
   private readonly DEBOUNCE_DELAY_MS = 5000; // 5 seconds
+  private allGenerationYears: number[] = []; // Cache all years from generations
 
   constructor(cache: CommandSupportCache) {
     this.cache = cache;
@@ -107,6 +108,34 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   /**
+   * Creates a visual timeline representation of year support
+   * @param supportedYears Array of supported years
+   * @param unsupportedYears Array of unsupported years
+   * @param allYears All years from generations
+   * @returns String with visual timeline (e.g., "■■■✗✗□□")
+   */
+  private createYearTimeline(supportedYears: string[], unsupportedYears: string[], allYears: number[]): string {
+    if (allYears.length === 0) {
+      return '';
+    }
+
+    const supported = new Set(supportedYears.map(y => parseInt(y, 10)));
+    const unsupported = new Set(unsupportedYears.map(y => parseInt(y, 10)));
+
+    const timeline = allYears.map(year => {
+      if (supported.has(year)) {
+        return '■'; // Filled square for supported
+      } else if (unsupported.has(year)) {
+        return '✗'; // X for unsupported
+      } else {
+        return '□'; // Empty square for unknown
+      }
+    });
+
+    return timeline.join('');
+  }
+
+  /**
    * Calculate suggested rax value by adding 8 to the hex hdr value
    * @param hdr The header value as a hex string (e.g., "7E0")
    * @returns The suggested rax value as a hex string (e.g., "7E8")
@@ -167,6 +196,20 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
 
     const text = document.getText();
     const rootNode = jsonc.parseTree(text);
+
+    // Load generation years for timeline visualization
+    if (this.allGenerationYears.length === 0) {
+      const generations = await getGenerations(workspaceRoot);
+      if (generations && generations.length > 0) {
+        const generationSet = new GenerationSet(generations);
+        const firstYear = generationSet.firstYear ?? 2000;
+        const lastYear = generationSet.lastYear ?? new Date().getFullYear() + 5;
+        this.allGenerationYears = [];
+        for (let year = firstYear; year <= lastYear; year++) {
+          this.allGenerationYears.push(year);
+        }
+      }
+    }
 
     // Batch load ALL command support data upfront (O(m) where m = number of years)
     const batchLoadStartTime = performance.now();
@@ -258,6 +301,18 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
                 // Filter out any years from unsupportedYears that are also in supportedYears
                 const finalUnsupportedYears = unsupportedYears.filter(year => !supportedYears.includes(year));
 
+                // Create visual timeline as the first CodeLens
+                const timeline = this.createYearTimeline(supportedYears, finalUnsupportedYears, this.allGenerationYears);
+                if (timeline) {
+                  const timelineCodeLens = new vscode.CodeLens(range, {
+                    title: timeline,
+                    command: '',
+                    tooltip: `${this.allGenerationYears[0]}-${this.allGenerationYears[this.allGenerationYears.length - 1]} | ■=supported ✗=unsupported □=unknown`
+                  });
+                  codeLenses.push(timelineCodeLens);
+                }
+
+                // Create text-based support info as second CodeLens
                 let title = '';
                 if (supportedYears.length === 0 && finalUnsupportedYears.length === 0) {
                   title += 'No information available.';
@@ -269,7 +324,8 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
                     if (supportedYears.length > 0) title += ' | ';
                     title += `❌ Unsupported: ${formatYearsAsRanges(finalUnsupportedYears)}`;
                   }
-                }                const codeLens = new vscode.CodeLens(range, { title: title, command: '' });
+                }
+                const codeLens = new vscode.CodeLens(range, { title: title, command: '' });
                 codeLenses.push(codeLens);
 
                 // Add debug filter suggestion if command has dbg: true
