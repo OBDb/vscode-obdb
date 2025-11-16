@@ -27,6 +27,26 @@ export function calculateDebugFilter(
     return null;
   }
 
+  // Special case: If command filter has ONLY years (no from/to), the command can ONLY run on those specific years
+  if (commandFilter?.years && commandFilter.years.length > 0 && !commandFilter.from && !commandFilter.to) {
+    // Command can only run on the specified years
+    const allowedYears = new Set(commandFilter.years);
+    const validSupportedYears = supported.filter(year => allowedYears.has(year));
+
+    // If all allowed years are supported, no debug filter is needed
+    if (validSupportedYears.length === commandFilter.years.length) {
+      return {}; // Empty filter means no debugging needed
+    }
+
+    // Build a debug filter for the allowed years that are NOT supported
+    const unsupportedAllowedYears = commandFilter.years.filter(year => !supported.includes(year));
+    if (unsupportedAllowedYears.length > 0) {
+      return { years: unsupportedAllowedYears };
+    }
+
+    return {}; // No debug filter needed
+  }
+
   let minYear = Math.min(...supported);
   let maxYear = Math.max(...supported);
 

@@ -105,4 +105,28 @@ console.assert(
 );
 console.log('✅ Test 7 passed: No supported years returns null');
 
+// Test 8: Command with filter.years only (command can ONLY run on those years)
+const result8 = calculateDebugFilter(
+  ['2007'],
+  createGenerationSet(2005, 2010),
+  { years: [2007] }
+);
+console.assert(
+  Object.keys(result8 || {}).length === 0,
+  `Test 8 failed: Expected {} (empty - year 2007 is supported), got ${JSON.stringify(result8)}`
+);
+console.log('✅ Test 8 passed: Command with filter.years=[2007] and 2007 supported returns empty filter');
+
+// Test 9: Command with filter.years only, but year not supported
+const result9 = calculateDebugFilter(
+  ['2008'],
+  createGenerationSet(2005, 2010),
+  { years: [2007, 2009] }
+);
+console.assert(
+  JSON.stringify(result9?.years) === '[2007,2009]',
+  `Test 9 failed: Expected { "years": [2007, 2009] }, got ${JSON.stringify(result9)}`
+);
+console.log('✅ Test 9 passed: Command with filter.years=[2007,2009] but only 2008 supported');
+
 console.log('\n🎉 All tests passed!');
