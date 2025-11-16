@@ -27,6 +27,8 @@
     "vscode:prepublish": "npm run package",
     "compile": "webpack",
     "compile:cli": "tsc -p tsconfig.cli.json",
+    "compile:test": "tsc -p tsconfig.test.json",
+    "test": "npm run compile:test && node dist/utils/debugFilterCalculator.test.js",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
     "pretest": "npm run compile"
