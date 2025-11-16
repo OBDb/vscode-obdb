@@ -114,9 +114,10 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
    * @param unsupportedYears Array of unsupported years
    * @param minYear Start of the year range
    * @param maxYear End of the year range
+   * @param filterBoundaries Set of years where filter boundaries occur
    * @returns Object with timeline string and year range
    */
-  private createYearTimeline(supportedYears: string[], unsupportedYears: string[], minYear: number, maxYear: number): { timeline: string, yearRange: string } {
+  private createYearTimeline(supportedYears: string[], unsupportedYears: string[], minYear: number, maxYear: number, filterBoundaries: Set<number>): { timeline: string, yearRange: string } {
     if (minYear > maxYear) {
       return { timeline: '', yearRange: '' };
     }
@@ -126,6 +127,11 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
 
     const timeline: string[] = [];
     for (let year = minYear; year <= maxYear; year++) {
+      // Add separator before this year if it's a filter boundary
+      if (filterBoundaries.has(year)) {
+        timeline.push(' ┃ '); // Thick vertical bar with padding on both sides
+      }
+
       if (supported.has(year)) {
         timeline.push('■'); // Filled square for supported
       } else if (unsupported.has(year)) {
@@ -232,8 +238,10 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
     });
 
     // Calculate global min/max year across all commands for consistent timeline width
+    // Also collect filter boundaries for timeline separators
     let globalMinYear = Infinity;
     let globalMaxYear = -Infinity;
+    const filterBoundaries = new Set<number>();
 
     if (rootNode && rootNode.type === 'object') {
       const commandsProperty = jsonc.findNodeAtLocation(rootNode, ['commands']);
@@ -243,6 +251,7 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
             let hdr: string | undefined;
             let cmdProperty: jsonc.Node | undefined;
             let rax: string | undefined;
+            let commandFilter: any = null;
 
             for (const prop of commandNode.children) {
               if (prop.type === 'property' && prop.children && prop.children.length === 2) {
@@ -257,6 +266,27 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
                 if (keyNode.value === 'rax') {
                   rax = valueNode.value as string;
                 }
+                if (keyNode.value === 'filter') {
+                  try {
+                    const filterText = document.getText().substring(valueNode.offset, valueNode.offset + valueNode.length);
+                    commandFilter = JSON.parse(filterText);
+                  } catch (e) {
+                    // Ignore parse errors
+                  }
+                }
+              }
+            }
+
+            // Collect filter boundaries (only simple filters with ONLY to or ONLY from)
+            if (commandFilter) {
+              const hasOnlyTo = commandFilter.to !== undefined && commandFilter.from === undefined && !commandFilter.years;
+              const hasOnlyFrom = commandFilter.from !== undefined && commandFilter.to === undefined && !commandFilter.years;
+
+              if (hasOnlyTo) {
+                filterBoundaries.add(commandFilter.to + 1); // Boundary is after the "to" year
+              }
+              if (hasOnlyFrom) {
+                filterBoundaries.add(commandFilter.from); // Boundary is at the "from" year
               }
             }
 
@@ -379,12 +409,12 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
                 const finalUnsupportedYears = unsupportedYears.filter(year => !supportedYears.includes(year));
 
                 // Create visual timeline as the first CodeLens
-                const timelineData = this.createYearTimeline(supportedYears, finalUnsupportedYears, globalMinYear, globalMaxYear);
+                const timelineData = this.createYearTimeline(supportedYears, finalUnsupportedYears, globalMinYear, globalMaxYear, filterBoundaries);
                 if (timelineData.timeline) {
                   const timelineCodeLens = new vscode.CodeLens(range, {
                     title: timelineData.timeline,
                     command: '',
-                    tooltip: `${timelineData.yearRange} | ■=supported ✗=unsupported □=unknown`
+                    tooltip: `${timelineData.yearRange} | ■=supported ✗=unsupported □=unknown | ┃=filter boundary`
                   });
                   codeLenses.push(timelineCodeLens);
                 }
