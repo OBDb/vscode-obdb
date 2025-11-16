@@ -7,6 +7,49 @@ export interface YearFilter {
 }
 
 /**
+ * Helper function to check if a year is allowed by the command filter
+ * @param year The year to check
+ * @param filter The command filter
+ * @returns true if the year is allowed by the filter, false otherwise
+ */
+function isYearAllowedByFilter(year: number, filter?: YearFilter): boolean {
+  if (!filter) {
+    return true; // No filter means all years are allowed
+  }
+
+  const hasFrom = filter.from !== undefined;
+  const hasTo = filter.to !== undefined;
+  const hasYears = filter.years !== undefined && filter.years.length > 0;
+
+  // Check if year is in the explicit years list
+  if (hasYears && filter.years!.includes(year)) {
+    return true;
+  }
+
+  // Check if year matches from/to constraints
+  if (hasFrom && hasTo) {
+    if (filter.to! < filter.from!) {
+      // OR condition: year <= to OR year >= from
+      return year <= filter.to! || year >= filter.from!;
+    } else {
+      // AND condition: from <= year <= to
+      return year >= filter.from! && year <= filter.to!;
+    }
+  } else if (hasFrom) {
+    // Only from: year >= from
+    return year >= filter.from!;
+  } else if (hasTo) {
+    // Only to: year <= to
+    return year <= filter.to!;
+  } else if (hasYears) {
+    // Only years: must be in the list (already checked above)
+    return false;
+  }
+
+  return true; // No constraints
+}
+
+/**
  * Calculates the debug filter based on supported years
  * Returns null if the command should have "dbg": true instead
  * @param supportedYears Array of supported model years
@@ -93,8 +136,9 @@ export function calculateDebugFilter(
   const filter: YearFilter = {};
 
   // "to" is the smallest year minus one (but not before earliest year if specified)
+  // Also check that this year is actually allowed by the command filter
   const toYear = minYear - 1;
-  if (toYear >= effectiveFirstYear) {
+  if (toYear >= effectiveFirstYear && isYearAllowedByFilter(toYear, commandFilter)) {
     filter.to = toYear;
   }
 
@@ -102,9 +146,10 @@ export function calculateDebugFilter(
   // This includes both explicitly unsupported years and unknown years
   // We keep unsupported years in the debug filter because the command might work with different configurations
   // Years at the boundaries are covered by "to" and "from"
+  // IMPORTANT: Only include years that are actually allowed by the command filter
   const gapYears: number[] = [];
   for (let year = minYear + 1; year < maxYear; year++) {
-    if (!supported.includes(year)) {
+    if (!supported.includes(year) && isYearAllowedByFilter(year, commandFilter)) {
       gapYears.push(year);
     }
   }
@@ -114,8 +159,9 @@ export function calculateDebugFilter(
   }
 
   // "from" is the largest year plus one (but not after latest year if specified)
+  // Also check that this year is actually allowed by the command filter
   const fromYear = maxYear + 1;
-  if (fromYear <= effectiveLastYear) {
+  if (fromYear <= effectiveLastYear && isYearAllowedByFilter(fromYear, commandFilter)) {
     filter.from = fromYear;
   }
 

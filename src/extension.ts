@@ -30,8 +30,8 @@ export function activate(context: vscode.ExtensionContext) {
   console.log('Registered hover provider for JSON files');
 
   // Register the visualization provider for bitmap visualizations
-  const visualizationProvider = initializeVisualizationProvider();
-  console.log('Registered visualization provider for bitmap visualizations');
+  const visualizationProvider = initializeVisualizationProvider(context);
+  console.log('Registered visualization provider for bitmap visualizations in sidebar');
 
   // Register the diagnostics provider for command validation
   const diagnosticsProvider = createDiagnosticsProvider(commandSupportCache);
@@ -182,6 +182,77 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
+  // Register command for optimizing filter
+  const optimizeFilterCommand = vscode.commands.registerCommand('obdb.optimizeFilter', async (args: {
+    documentUri: string;
+    commandRange: vscode.Range;
+    optimizedFilter: any;
+  }) => {
+    try {
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(args.documentUri));
+      const editor = await vscode.window.showTextDocument(document);
+
+      // Get the command object text
+      let commandText = document.getText(args.commandRange);
+
+      // Check if filter should be removed (undefined, null, or empty object)
+      const shouldRemoveFilter = args.optimizedFilter === undefined ||
+                                  args.optimizedFilter === null ||
+                                  (typeof args.optimizedFilter === 'object' && Object.keys(args.optimizedFilter).length === 0);
+
+      if (shouldRemoveFilter) {
+        // Remove the filter entirely
+        let modifiedText = commandText;
+
+        // Remove 'filter' property with various formatting possibilities
+        modifiedText = modifiedText.replace(/,\s*"filter"\s*:\s*\{[^}]*\}(?=\s*[,}])/g, '');
+        modifiedText = modifiedText.replace(/"filter"\s*:\s*\{[^}]*\}\s*,/g, '');
+
+        await editor.edit(editBuilder => {
+          editBuilder.replace(args.commandRange, modifiedText);
+        });
+
+        vscode.window.showInformationMessage('Filter removed - all years supported or uncertain');
+      } else {
+        // Format the optimized filter
+        const formatFilter = (filter: any): string => {
+          const parts: string[] = [];
+          if (filter.to !== undefined) parts.push(`"to": ${filter.to}`);
+          if (filter.years !== undefined) parts.push(`"years": [${filter.years.join(', ')}]`);
+          if (filter.from !== undefined) parts.push(`"from": ${filter.from}`);
+          return `{ ${parts.join(', ')} }`;
+        };
+
+        const optimizedFilterJson = formatFilter(args.optimizedFilter);
+
+        let modifiedText = commandText;
+
+        // Check if filter property already exists
+        if (/"filter"\s*:\s*\{[^}]*\}/.test(modifiedText)) {
+          // Replace existing filter
+          modifiedText = modifiedText.replace(/"filter"\s*:\s*\{[^}]*\}/g, `"filter": ${optimizedFilterJson}`);
+        } else {
+          // Add new filter property after freq
+          const freqMatch = modifiedText.match(/"freq"\s*:\s*[^,}]+/);
+          if (freqMatch && freqMatch.index !== undefined) {
+            const insertPosition = freqMatch.index + freqMatch[0].length;
+            const beforeInsert = modifiedText.substring(0, insertPosition);
+            const afterInsert = modifiedText.substring(insertPosition);
+            modifiedText = beforeInsert + `, "filter": ${optimizedFilterJson}` + afterInsert;
+          }
+        }
+
+        await editor.edit(editBuilder => {
+          editBuilder.replace(args.commandRange, modifiedText);
+        });
+
+        vscode.window.showInformationMessage('Filter optimized');
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to optimize filter: ${error}`);
+    }
+  });
+
   // Register command for adding rax filter
   const addRaxFilterCommand = vscode.commands.registerCommand('obdb.addRaxFilter', async (args: {
     documentUri: string;
@@ -231,24 +302,6 @@ export function activate(context: vscode.ExtensionContext) {
     handleTestExecutionResult(event);
   });
 
-  // Automatically show bitmap visualization when editing a JSON file
-  const autoShowDisposable = vscode.window.onDidChangeActiveTextEditor(editor => {
-    if (editor && editor.document.languageId === 'json') {
-      // Delay slightly to ensure document is fully loaded
-      setTimeout(() => {
-        vscode.commands.executeCommand('obdb.showBitmapVisualization');
-      }, 300);
-    }
-  });
-
-  // Initial auto-show if starting with a JSON file open
-  if (vscode.window.activeTextEditor &&
-      vscode.window.activeTextEditor.document.languageId === 'json') {
-    setTimeout(() => {
-      vscode.commands.executeCommand('obdb.showBitmapVisualization');
-    }, 500);
-  }
-
   // Add providers and other disposables to subscriptions
   context.subscriptions.push(
     hoverProvider,
@@ -259,11 +312,11 @@ export function activate(context: vscode.ExtensionContext) {
     codeLensProvider, // Added provider to subscriptions
     applyDebugFilterCommand,
     optimizeDebugFilterCommand,
+    optimizeFilterCommand,
     addRaxFilterCommand,
     ...testCommands,
     testExplorer,
     testExecutionSubscription,
-    autoShowDisposable,
     testDiagnosticCollection
   );
 }

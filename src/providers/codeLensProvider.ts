@@ -6,6 +6,7 @@ import { CommandSupportCache } from '../caches/commands/commandSupportCache';
 import { PerformanceMonitor } from '../utils/performanceMonitor';
 import { calculateDebugFilter } from '../utils/debugFilterCalculator';
 import { GenerationSet } from '../utils/generationsCore';
+import { calculateOptimizedFilter } from '../utils/filterOptimizer';
 
 interface DocumentCodeLensCache {
   version: number;
@@ -20,6 +21,8 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
   private testFileWatcher: vscode.FileSystemWatcher | undefined;
   private invalidationTimer: NodeJS.Timeout | undefined;
   private readonly DEBOUNCE_DELAY_MS = 5000; // 5 seconds
+  private allGenerationYears: number[] = []; // Cache all years from generations
+  private documentYearRange: Map<string, { minYear: number, maxYear: number }> = new Map();
 
   constructor(cache: CommandSupportCache) {
     this.cache = cache;
@@ -106,6 +109,39 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   /**
+   * Creates a visual timeline representation of year support
+   * @param supportedYears Array of supported years
+   * @param unsupportedYears Array of unsupported years
+   * @param minYear Start of the year range
+   * @param maxYear End of the year range
+   * @returns Object with timeline string and year range
+   */
+  private createYearTimeline(supportedYears: string[], unsupportedYears: string[], minYear: number, maxYear: number): { timeline: string, yearRange: string } {
+    if (minYear > maxYear) {
+      return { timeline: '', yearRange: '' };
+    }
+
+    const supported = new Set(supportedYears.map(y => parseInt(y, 10)));
+    const unsupported = new Set(unsupportedYears.map(y => parseInt(y, 10)));
+
+    const timeline: string[] = [];
+    for (let year = minYear; year <= maxYear; year++) {
+      if (supported.has(year)) {
+        timeline.push('■'); // Filled square for supported
+      } else if (unsupported.has(year)) {
+        timeline.push('✗'); // X for unsupported
+      } else {
+        timeline.push('□'); // Empty square for unknown
+      }
+    }
+
+    return {
+      timeline: timeline.join(''),
+      yearRange: `${minYear}-${maxYear}`
+    };
+  }
+
+  /**
    * Calculate suggested rax value by adding 8 to the hex hdr value
    * @param hdr The header value as a hex string (e.g., "7E0")
    * @returns The suggested rax value as a hex string (e.g., "7E8")
@@ -167,6 +203,20 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
     const text = document.getText();
     const rootNode = jsonc.parseTree(text);
 
+    // Load generation years for timeline visualization
+    if (this.allGenerationYears.length === 0) {
+      const generations = await getGenerations(workspaceRoot);
+      if (generations && generations.length > 0) {
+        const generationSet = new GenerationSet(generations);
+        const firstYear = generationSet.firstYear ?? 2000;
+        const lastYear = generationSet.lastYear ?? new Date().getFullYear() + 5;
+        this.allGenerationYears = [];
+        for (let year = firstYear; year <= lastYear; year++) {
+          this.allGenerationYears.push(year);
+        }
+      }
+    }
+
     // Batch load ALL command support data upfront (O(m) where m = number of years)
     const batchLoadStartTime = performance.now();
     let batchSupportData = this.cache.getBatchCommandSupport(workspaceRoot);
@@ -180,6 +230,77 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
       commandCount: batchSupportData.size,
       cached: batchLoadTime < 5
     });
+
+    // Calculate global min/max year across all commands for consistent timeline width
+    let globalMinYear = Infinity;
+    let globalMaxYear = -Infinity;
+
+    if (rootNode && rootNode.type === 'object') {
+      const commandsProperty = jsonc.findNodeAtLocation(rootNode, ['commands']);
+      if (commandsProperty && commandsProperty.type === 'array' && commandsProperty.children) {
+        for (const commandNode of commandsProperty.children) {
+          if (commandNode.type === 'object' && commandNode.children) {
+            let hdr: string | undefined;
+            let cmdProperty: jsonc.Node | undefined;
+            let rax: string | undefined;
+
+            for (const prop of commandNode.children) {
+              if (prop.type === 'property' && prop.children && prop.children.length === 2) {
+                const keyNode = prop.children[0];
+                const valueNode = prop.children[1];
+                if (keyNode.value === 'hdr') {
+                  hdr = valueNode.value as string;
+                }
+                if (keyNode.value === 'cmd') {
+                  cmdProperty = valueNode;
+                }
+                if (keyNode.value === 'rax') {
+                  rax = valueNode.value as string;
+                }
+              }
+            }
+
+            if (hdr && cmdProperty) {
+              let cmdValue: string | Record<string, string> | undefined;
+
+              if (cmdProperty.type === 'object' && cmdProperty.children && cmdProperty.children[0] && cmdProperty.children[0].children) {
+                const firstCmdProp = cmdProperty.children[0];
+                const cmdKeyNode = firstCmdProp.children![0];
+                const cmdValueNode = firstCmdProp.children![1];
+                cmdValue = { [cmdKeyNode.value as string]: cmdValueNode.value as string };
+              } else if (cmdProperty.type === 'string') {
+                cmdValue = cmdProperty.value as string;
+              }
+
+              if (cmdValue) {
+                const commandId = createSimpleCommandId(hdr, cmdValue, rax);
+                const normalizedCommandId = normalizeCommandId(commandId);
+                const normalizedStripFilter = normalizeCommandId(stripReceiveFilter(commandId));
+                const supportData = batchSupportData.get(normalizedCommandId) || batchSupportData.get(normalizedStripFilter) || { supported: [], unsupported: [] };
+                const supportedYears = supportData.supported;
+                const unsupportedYears = supportData.unsupported;
+                const finalUnsupportedYears = unsupportedYears.filter(year => !supportedYears.includes(year));
+
+                // Update global min/max based on known years
+                const allKnownYears = [...supportedYears, ...finalUnsupportedYears].map(y => parseInt(y, 10));
+                if (allKnownYears.length > 0) {
+                  const minYear = Math.min(...allKnownYears);
+                  const maxYear = Math.max(...allKnownYears);
+                  globalMinYear = Math.min(globalMinYear, minYear);
+                  globalMaxYear = Math.max(globalMaxYear, maxYear);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // If no known years found, fall back to empty range
+    if (globalMinYear === Infinity || globalMaxYear === -Infinity) {
+      globalMinYear = 0;
+      globalMaxYear = 0;
+    }
 
     if (rootNode && rootNode.type === 'object') {
       const commandsProperty = jsonc.findNodeAtLocation(rootNode, ['commands']);
@@ -257,6 +378,18 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
                 // Filter out any years from unsupportedYears that are also in supportedYears
                 const finalUnsupportedYears = unsupportedYears.filter(year => !supportedYears.includes(year));
 
+                // Create visual timeline as the first CodeLens
+                const timelineData = this.createYearTimeline(supportedYears, finalUnsupportedYears, globalMinYear, globalMaxYear);
+                if (timelineData.timeline) {
+                  const timelineCodeLens = new vscode.CodeLens(range, {
+                    title: timelineData.timeline,
+                    command: '',
+                    tooltip: `${timelineData.yearRange} | ■=supported ✗=unsupported □=unknown`
+                  });
+                  codeLenses.push(timelineCodeLens);
+                }
+
+                // Create text-based support info as second CodeLens
                 let title = '';
                 if (supportedYears.length === 0 && finalUnsupportedYears.length === 0) {
                   title += 'No information available.';
@@ -268,7 +401,8 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
                     if (supportedYears.length > 0) title += ' | ';
                     title += `❌ Unsupported: ${formatYearsAsRanges(finalUnsupportedYears)}`;
                   }
-                }                const codeLens = new vscode.CodeLens(range, { title: title, command: '' });
+                }
+                const codeLens = new vscode.CodeLens(range, { title: title, command: '' });
                 codeLenses.push(codeLens);
 
                 // Add debug filter suggestion if command has dbg: true
@@ -360,6 +494,44 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
                           }]
                         });
                         codeLenses.push(optimizeCodeLens);
+                      }
+                    }
+                  }
+                }
+
+                // Check command filter for optimization opportunities
+                if (supportedYears.length > 0 || finalUnsupportedYears.length > 0) {
+                  const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                  if (workspacePath) {
+                    const generations = await getGenerations(workspacePath);
+                    if (generations && generations.length > 0) {
+                      const generationSet = new GenerationSet(generations);
+                      const optimizedFilter = calculateOptimizedFilter(supportedYears, finalUnsupportedYears, generationSet);
+
+                      // Compare with existing command filter
+                      const existingFilterStr = JSON.stringify(commandFilter || {});
+                      const optimizedFilterStr = JSON.stringify(optimizedFilter || {});
+
+                      if (existingFilterStr !== optimizedFilterStr && optimizedFilter !== null) {
+                        const filterOptimizeRange = new vscode.Range(
+                          document.positionAt(commandNode.offset),
+                          document.positionAt(commandNode.offset + commandNode.length)
+                        );
+
+                        const filterOptimizeTitle = Object.keys(optimizedFilter).length === 0
+                          ? '🗑️ Remove filter (all years supported/uncertain)'
+                          : '🎯 Optimize filter';
+
+                        const filterOptimizeCodeLens = new vscode.CodeLens(filterOptimizeRange, {
+                          title: filterOptimizeTitle,
+                          command: 'obdb.optimizeFilter',
+                          arguments: [{
+                            documentUri: document.uri.toString(),
+                            commandRange: filterOptimizeRange,
+                            optimizedFilter: optimizedFilter
+                          }]
+                        });
+                        codeLenses.push(filterOptimizeCodeLens);
                       }
                     }
                   }

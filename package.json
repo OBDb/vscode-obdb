@@ -38,6 +38,24 @@
       "hoverProvider": "true",
       "decorationProvider": "true"
     },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "obdb",
+          "title": "OBDb",
+          "icon": "resources/obdb-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "obdb": [
+        {
+          "type": "webview",
+          "id": "obdb.workbench",
+          "name": "Workbench"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "obdb.showBitmapVisualization",

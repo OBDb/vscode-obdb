@@ -13,6 +13,7 @@ export function extractSignals(command: any): Signal[] {
     return {
       id: signal.id || 'unknown',
       name: signal.name || signal.id || 'Unknown',
+      path: signal.path,
       suggestedMetric: signal.suggestedMetric,
       bitOffset,
       bitLength
@@ -20,6 +21,7 @@ export function extractSignals(command: any): Signal[] {
   }) : command.parameters?.map((param: any) => ({
     id: param.id || 'unknown',
     name: param.name || param.id || 'Unknown',
+    path: param.path,
     suggestedMetric: param.suggestedMetric,
     bitOffset: param.bitOffset || 0,
     bitLength: param.bitLength || 8

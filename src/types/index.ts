@@ -23,6 +23,7 @@ export interface Parameter {
 export interface Signal {
   id: string;
   name: string;
+  path?: string;
   suggestedMetric?: string;
   bitOffset: number;
   bitLength: number;
