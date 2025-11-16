@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import { isPositionInCommand, getSampleCommandResponses, generateCommandIdFromDefinition } from '../utils/commandParser';
-import { extractSignals } from './signalExtractor';
+import { extractSignals, getUniqueSignals, generateSignalColors } from './signalExtractor';
 import { generateBitmapHtml } from './htmlGenerator';
 import { getWebviewContent } from './webviewContent';
+import { Signal } from '../types';
 
 /**
  * Provider for the OBDb Workbench webview in the sidebar
@@ -117,11 +118,299 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    this._view.webview.html = this.getEmptyStateHtml();
+    // If we have a source document, show signal summary
+    if (this.sourceDocument && this.sourceDocument.languageId === 'json') {
+      this._view.webview.html = this.getSignalSummaryHtml(this.sourceDocument);
+    } else {
+      this._view.webview.html = this.getEmptyStateHtml();
+    }
   }
 
   /**
-   * Generate HTML for empty state
+   * Extract all signals from a JSON document
+   */
+  private extractAllSignals(document: vscode.TextDocument): Signal[] {
+    try {
+      const content = document.getText();
+      let jsonDoc;
+
+      try {
+        jsonDoc = JSON.parse(content);
+      } catch (err) {
+        return [];
+      }
+
+      const allSignals: Signal[] = [];
+
+      // Helper function to add signals from a command
+      const addSignalsFromCommand = (command: any) => {
+        const signals = extractSignals(command);
+        allSignals.push(...signals);
+      };
+
+      // Check if document has commands array
+      if (jsonDoc.commands && Array.isArray(jsonDoc.commands)) {
+        jsonDoc.commands.forEach((command: any) => {
+          addSignalsFromCommand(command);
+        });
+      } else if ((jsonDoc.parameters && Array.isArray(jsonDoc.parameters)) ||
+                 (jsonDoc.signals && Array.isArray(jsonDoc.signals))) {
+        // Single command document
+        addSignalsFromCommand(jsonDoc);
+      }
+
+      return allSignals;
+    } catch (error) {
+      console.error('Error extracting signals:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Group signals by their path property
+   */
+  private groupSignalsByPath(signals: Signal[]): { path: string; signals: Signal[] }[] {
+    const signalsByPathMap = new Map<string, Signal[]>();
+
+    signals.forEach(signal => {
+      const path = signal.path || '(uncategorized)';
+      if (!signalsByPathMap.has(path)) {
+        signalsByPathMap.set(path, []);
+      }
+      signalsByPathMap.get(path)!.push(signal);
+    });
+
+    // Convert map to sorted array
+    const signalsByPath: { path: string; signals: Signal[] }[] = [];
+    const sortedPaths = Array.from(signalsByPathMap.keys()).sort((a, b) => {
+      // Put uncategorized at the end
+      if (a === '(uncategorized)') return 1;
+      if (b === '(uncategorized)') return -1;
+      return a.localeCompare(b);
+    });
+
+    sortedPaths.forEach(path => {
+      signalsByPath.push({
+        path,
+        signals: signalsByPathMap.get(path)!
+      });
+    });
+
+    return signalsByPath;
+  }
+
+  /**
+   * Group signals by their suggestedMetric (Connectable)
+   */
+  private groupSignalsByConnectable(signals: Signal[]): { connectable: string; signals: Signal[] }[] {
+    const signalsByConnectableMap = new Map<string, Signal[]>();
+
+    signals.forEach(signal => {
+      if (signal.suggestedMetric) {
+        if (!signalsByConnectableMap.has(signal.suggestedMetric)) {
+          signalsByConnectableMap.set(signal.suggestedMetric, []);
+        }
+        signalsByConnectableMap.get(signal.suggestedMetric)!.push(signal);
+      }
+    });
+
+    // Convert map to sorted array
+    const signalsByConnectable: { connectable: string; signals: Signal[] }[] = [];
+    const sortedConnectables = Array.from(signalsByConnectableMap.keys()).sort();
+
+    sortedConnectables.forEach(connectable => {
+      signalsByConnectable.push({
+        connectable,
+        signals: signalsByConnectableMap.get(connectable)!
+      });
+    });
+
+    return signalsByConnectable;
+  }
+
+  /**
+   * Generate HTML for signal summary view
+   */
+  private getSignalSummaryHtml(document: vscode.TextDocument): string {
+    const allSignals = this.extractAllSignals(document);
+
+    if (allSignals.length === 0) {
+      return this.getEmptyStateHtml();
+    }
+
+    const signalsByConnectable = this.groupSignalsByConnectable(allSignals);
+    const signalsByPath = this.groupSignalsByPath(allSignals);
+    const totalPaths = signalsByPath.length;
+
+    // Generate Connectables section
+    let connectablesHtml = '';
+    if (signalsByConnectable.length > 0) {
+      signalsByConnectable.forEach(({ connectable, signals }) => {
+        const uniqueSignals = getUniqueSignals(signals);
+        const signalColors = generateSignalColors(uniqueSignals);
+
+        connectablesHtml += `
+          <div class="group-section">
+            <h3 class="group-name">${this.escapeHtml(connectable)}</h3>
+            <div class="signal-count">${uniqueSignals.length} signal${uniqueSignals.length !== 1 ? 's' : ''}</div>
+            <div class="signal-list">
+              ${uniqueSignals.map(signal => `
+                <div class="signal-item">
+                  <div class="signal-color" style="background-color: ${signalColors[signal.id]}"></div>
+                  <div class="signal-info">
+                    <div class="signal-name">${this.escapeHtml(signal.name)}</div>
+                    <div class="signal-details">
+                      ${signal.id} • ${signal.bitLength} bit${signal.bitLength !== 1 ? 's' : ''} @ offset ${signal.bitOffset}
+                      ${signal.path ? ` • ${this.escapeHtml(signal.path)}` : ''}
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    // Generate signals by path section
+    let pathsHtml = '';
+    signalsByPath.forEach(({ path, signals }) => {
+      const uniqueSignals = getUniqueSignals(signals);
+      const signalColors = generateSignalColors(uniqueSignals);
+
+      pathsHtml += `
+        <div class="group-section">
+          <h3 class="group-name">${this.escapeHtml(path)}</h3>
+          <div class="signal-count">${uniqueSignals.length} signal${uniqueSignals.length !== 1 ? 's' : ''}</div>
+          <div class="signal-list">
+            ${uniqueSignals.map(signal => `
+              <div class="signal-item">
+                <div class="signal-color" style="background-color: ${signalColors[signal.id]}"></div>
+                <div class="signal-info">
+                  <div class="signal-name">${this.escapeHtml(signal.name)}</div>
+                  <div class="signal-details">
+                    ${signal.id} • ${signal.bitLength} bit${signal.bitLength !== 1 ? 's' : ''} @ offset ${signal.bitOffset}
+                    ${signal.suggestedMetric ? ` • ${this.escapeHtml(signal.suggestedMetric)}` : ''}
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    });
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      padding: 0;
+      margin: 0;
+      color: var(--vscode-foreground);
+      font-family: var(--vscode-font-family);
+      font-size: 13px;
+    }
+    .section-header {
+      padding: 16px;
+      background: var(--vscode-sideBar-background);
+      border-bottom: 1px solid var(--vscode-widget-border);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .section-header h2 {
+      margin: 0 0 4px 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .section-header .count {
+      font-size: 12px;
+      opacity: 0.7;
+    }
+    .divider {
+      height: 8px;
+      background: var(--vscode-sideBar-background);
+      border-top: 1px solid var(--vscode-widget-border);
+      border-bottom: 1px solid var(--vscode-widget-border);
+    }
+    .group-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--vscode-widget-border);
+    }
+    .group-section:last-child {
+      border-bottom: none;
+    }
+    .group-name {
+      margin: 0 0 4px 0;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+    }
+    .signal-count {
+      font-size: 12px;
+      opacity: 0.6;
+      margin-bottom: 12px;
+    }
+    .signal-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .signal-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 6px 8px;
+      background: var(--vscode-list-hoverBackground);
+      border-radius: 4px;
+    }
+    .signal-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .signal-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .signal-name {
+      font-weight: 500;
+      margin-bottom: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .signal-details {
+      font-size: 11px;
+      opacity: 0.7;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  ${connectablesHtml ? `
+    <div class="section-header">
+      <h2>Connectables</h2>
+      <div class="count">${signalsByConnectable.length} connectable${signalsByConnectable.length !== 1 ? 's' : ''}</div>
+    </div>
+    ${connectablesHtml}
+    <div class="divider"></div>
+  ` : ''}
+  <div class="section-header">
+    <h2>Signals by Path</h2>
+    <div class="count">${allSignals.length} signal${allSignals.length !== 1 ? 's' : ''} • ${totalPaths} path${totalPaths !== 1 ? 's' : ''}</div>
+  </div>
+  ${pathsHtml}
+</body>
+</html>`;
+  }
+
+  /**
+   * Generate HTML for empty state (no JSON file open)
    */
   private getEmptyStateHtml(): string {
     return `<!DOCTYPE html>
@@ -156,11 +445,25 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
   <div class="empty-state">
-    <h2>No Command Selected</h2>
-    <p>Open a JSON signalset file and position your cursor within a command object to view its bitmap visualization.</p>
+    <h2>No Signalset Open</h2>
+    <p>Open a JSON signalset file to view signal summaries and command visualizations.</p>
   </div>
 </body>
 </html>`;
+  }
+
+  /**
+   * Escape HTML special characters
+   */
+  private escapeHtml(text: string): string {
+    const map: { [key: string]: string } = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, (m) => map[m]);
   }
 
   /**

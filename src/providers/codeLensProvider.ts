@@ -6,6 +6,7 @@ import { CommandSupportCache } from '../caches/commands/commandSupportCache';
 import { PerformanceMonitor } from '../utils/performanceMonitor';
 import { calculateDebugFilter } from '../utils/debugFilterCalculator';
 import { GenerationSet } from '../utils/generationsCore';
+import { calculateOptimizedFilter } from '../utils/filterOptimizer';
 
 interface DocumentCodeLensCache {
   version: number;
@@ -360,6 +361,44 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
                           }]
                         });
                         codeLenses.push(optimizeCodeLens);
+                      }
+                    }
+                  }
+                }
+
+                // Check command filter for optimization opportunities
+                if (supportedYears.length > 0 || finalUnsupportedYears.length > 0) {
+                  const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                  if (workspacePath) {
+                    const generations = await getGenerations(workspacePath);
+                    if (generations && generations.length > 0) {
+                      const generationSet = new GenerationSet(generations);
+                      const optimizedFilter = calculateOptimizedFilter(supportedYears, finalUnsupportedYears, generationSet);
+
+                      // Compare with existing command filter
+                      const existingFilterStr = JSON.stringify(commandFilter || {});
+                      const optimizedFilterStr = JSON.stringify(optimizedFilter || {});
+
+                      if (existingFilterStr !== optimizedFilterStr && optimizedFilter !== null) {
+                        const filterOptimizeRange = new vscode.Range(
+                          document.positionAt(commandNode.offset),
+                          document.positionAt(commandNode.offset + commandNode.length)
+                        );
+
+                        const filterOptimizeTitle = Object.keys(optimizedFilter).length === 0
+                          ? '🗑️ Remove filter (all years supported/uncertain)'
+                          : '🎯 Optimize filter';
+
+                        const filterOptimizeCodeLens = new vscode.CodeLens(filterOptimizeRange, {
+                          title: filterOptimizeTitle,
+                          command: 'obdb.optimizeFilter',
+                          arguments: [{
+                            documentUri: document.uri.toString(),
+                            commandRange: filterOptimizeRange,
+                            optimizedFilter: optimizedFilter
+                          }]
+                        });
+                        codeLenses.push(filterOptimizeCodeLens);
                       }
                     }
                   }
