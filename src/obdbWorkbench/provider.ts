@@ -506,6 +506,33 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * Check if cursor is directly on a "path" property (key or value) in the JSON
+   */
+  private isCursorOnPathProperty(editor: vscode.TextEditor, position: vscode.Position): boolean {
+    const line = editor.document.lineAt(position.line);
+    const lineText = line.text;
+
+    // Find the "path" property pattern on this line
+    const pathPropertyRegex = /"path"\s*:\s*"[^"]*"/g;
+    let match;
+
+    while ((match = pathPropertyRegex.exec(lineText)) !== null) {
+      const matchStart = match.index;
+      const matchEnd = match.index + match[0].length;
+
+      // Get the character position in the line
+      const cursorChar = position.character;
+
+      // Check if cursor is within the "path" property (including quotes and value)
+      if (cursorChar >= matchStart && cursorChar <= matchEnd) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Update visualization based on a given position with debouncing and cancellation
    */
   private async updateVisualizationFromPosition(editor: vscode.TextEditor, position: vscode.Position): Promise<void> {
@@ -517,6 +544,13 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
     // Debounce the update to avoid excessive processing during rapid changes
     this.debounceTimer = setTimeout(async () => {
       try {
+        // Check if cursor is on a "path" property - if so, show signal summary
+        if (this.isCursorOnPathProperty(editor, position)) {
+          this.currentCommand = undefined;
+          this.showEmptyState();
+          return;
+        }
+
         // Check if we're in a command
         const commandCheck = isPositionInCommand(editor.document, position);
         if (!commandCheck.isCommand || !commandCheck.commandObject) {
