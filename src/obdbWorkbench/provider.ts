@@ -533,6 +533,104 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * Find which signal the cursor is currently positioned in within a specific command
+   */
+  private findSignalAtCursor(command: any, document: vscode.TextDocument, position: vscode.Position, commandRange?: vscode.Range): string | null {
+    if (!command.signals || !Array.isArray(command.signals)) {
+      return null;
+    }
+
+    // Get the document text
+    const content = document.getText();
+    const cursorOffset = document.offsetAt(position);
+
+    // If we have a command range, search only within that range
+    let searchStartOffset = 0;
+    let searchEndOffset = content.length;
+
+    if (commandRange) {
+      searchStartOffset = document.offsetAt(commandRange.start);
+      searchEndOffset = document.offsetAt(commandRange.end);
+    }
+
+    // Find the signals array within the command range
+    const searchText = content.substring(searchStartOffset, searchEndOffset);
+    const signalsMatch = searchText.match(/"signals"\s*:\s*\[/);
+    if (!signalsMatch || signalsMatch.index === undefined) {
+      return null;
+    }
+
+    const signalsStartOffset = searchStartOffset + signalsMatch.index + signalsMatch[0].length;
+
+    // If cursor is before signals array, no signal is selected
+    if (cursorOffset < signalsStartOffset) {
+      return null;
+    }
+
+    // Find each signal object boundary within this command's signals array
+    let braceCount = 0;
+    let inString = false;
+    let escapeNext = false;
+    let currentSignalIndex = 0;
+    let signalStartOffset = -1;
+
+    for (let i = signalsStartOffset; i < searchEndOffset; i++) {
+      const char = content[i];
+
+      // Handle string escaping
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+
+      // Handle strings
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) {
+        continue;
+      }
+
+      // Track braces to find signal object boundaries
+      if (char === '{') {
+        if (braceCount === 0) {
+          signalStartOffset = i;
+        }
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0 && signalStartOffset !== -1) {
+          // We've found a complete signal object
+          const signalEndOffset = i + 1;
+
+          // Check if cursor is within this signal
+          if (cursorOffset >= signalStartOffset && cursorOffset <= signalEndOffset) {
+            // Return the signal ID
+            if (currentSignalIndex < command.signals.length) {
+              return command.signals[currentSignalIndex].id || null;
+            }
+          }
+
+          currentSignalIndex++;
+          signalStartOffset = -1;
+        }
+      } else if (char === ']' && braceCount === 0) {
+        // End of signals array
+        break;
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Update visualization based on a given position with debouncing and cancellation
    */
   private async updateVisualizationFromPosition(editor: vscode.TextEditor, position: vscode.Position): Promise<void> {
@@ -563,11 +661,14 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
         const command = commandCheck.commandObject;
         this.currentCommand = command;
 
+        // Find which signal the cursor is on (pass the command range to limit search)
+        const highlightedSignalId = this.findSignalAtCursor(command, editor.document, position, commandCheck.range);
+
         // If view exists, update it with cancellation token
         if (this._view) {
           // Create new cancellation token for this operation
           this.currentCancellationTokenSource = new vscode.CancellationTokenSource();
-          await this.updateVisualizationPanel(command, this.currentCancellationTokenSource.token);
+          await this.updateVisualizationPanel(command, this.currentCancellationTokenSource.token, highlightedSignalId);
         }
       } catch (error) {
         // If operation was cancelled, ignore the error
@@ -582,7 +683,7 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
   /**
    * Update the visualization panel with command data
    */
-  private async updateVisualizationPanel(command: any, cancellationToken?: vscode.CancellationToken) {
+  private async updateVisualizationPanel(command: any, cancellationToken?: vscode.CancellationToken, highlightedSignalId?: string | null) {
     if (!this._view) {
       return;
     }
@@ -641,7 +742,8 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
       commandHeader,
       commandDisplay,
       command.description || '',
-      sampleResponses
+      sampleResponses,
+      highlightedSignalId
     );
   }
 

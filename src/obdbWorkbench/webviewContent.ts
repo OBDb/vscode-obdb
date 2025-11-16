@@ -10,7 +10,8 @@ export function getWebviewContent(
   commandHeader: string,
   commandDisplay: string,
   description: string,
-  sampleResponses?: Array<{modelYear: string, response: string, expectedValues?: Record<string, any>}>
+  sampleResponses?: Array<{modelYear: string, response: string, expectedValues?: Record<string, any>}>,
+  highlightedSignalId?: string | null
 ): string {
   return '<!DOCTYPE html>' +
     '<html lang="en">' +
@@ -413,6 +414,8 @@ export function getWebviewContent(
     'el.classList.remove("highlight");' +
     '});' +
     '}' +
+    // Auto-highlight signal if provided
+    (highlightedSignalId ? `highlightSignal('${highlightedSignalId}');` : '') +
     '});' +
     '</script>' +
     '<script>' +
