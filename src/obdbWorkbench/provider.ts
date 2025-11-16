@@ -13,6 +13,7 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
 
   private _view?: vscode.WebviewView;
   private currentCommand: any | undefined;
+  private currentCommandRange: vscode.Range | undefined;
   private sourceDocument: vscode.TextDocument | undefined;
   private currentCancellationTokenSource: vscode.CancellationTokenSource | undefined;
   private debounceTimer: NodeJS.Timeout | undefined;
@@ -94,6 +95,13 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
       enableScripts: true,
       localResourceRoots: [this._extensionUri]
     };
+
+    // Set up message listener for webview messages
+    webviewView.webview.onDidReceiveMessage(async (message) => {
+      if (message.command === 'selectSignal' && message.signalId) {
+        await this.selectSignalInEditor(message.signalId);
+      }
+    });
 
     // If we have an active JSON editor, start visualizing it
     const activeEditor = vscode.window.activeTextEditor;
@@ -631,6 +639,112 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * Select a signal definition in the editor when clicked in the webview
+   */
+  private async selectSignalInEditor(signalId: string): Promise<void> {
+    // We need the current command, command range, and source document
+    if (!this.currentCommand || !this.currentCommandRange || !this.sourceDocument) {
+      return;
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document !== this.sourceDocument) {
+      return;
+    }
+
+    // Find the signal in the current command
+    const signals = this.currentCommand.signals;
+    if (!signals || !Array.isArray(signals)) {
+      return;
+    }
+
+    const signalIndex = signals.findIndex((s: any) => s.id === signalId);
+    if (signalIndex === -1) {
+      return;
+    }
+
+    // Find the command's position in the document
+    const document = editor.document;
+    const content = document.getText();
+
+    // Use the stored command range to limit search
+    const searchStartOffset = document.offsetAt(this.currentCommandRange.start);
+    const searchEndOffset = document.offsetAt(this.currentCommandRange.end);
+
+    // Find the signals array within the command range
+    const searchText = content.substring(searchStartOffset, searchEndOffset);
+    const signalsMatch = searchText.match(/"signals"\s*:\s*\[/);
+    if (!signalsMatch || signalsMatch.index === undefined) {
+      return;
+    }
+
+    const signalsStartOffset = searchStartOffset + signalsMatch.index + signalsMatch[0].length;
+
+    // Parse through the signals array to find the specific signal object
+    let braceCount = 0;
+    let inString = false;
+    let escapeNext = false;
+    let currentSignalIndex = 0;
+    let signalStartOffset = -1;
+
+    for (let i = signalsStartOffset; i < searchEndOffset; i++) {
+      const char = content[i];
+
+      // Handle string escaping
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+
+      // Handle strings
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) {
+        continue;
+      }
+
+      // Track braces to find signal object boundaries
+      if (char === '{') {
+        if (braceCount === 0) {
+          signalStartOffset = i;
+        }
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0 && signalStartOffset !== -1) {
+          // We've found a complete signal object
+          if (currentSignalIndex === signalIndex) {
+            // This is the signal we're looking for!
+            const signalEndOffset = i + 1;
+            const startPos = document.positionAt(signalStartOffset);
+            const endPos = document.positionAt(signalEndOffset);
+            const range = new vscode.Range(startPos, endPos);
+
+            // Select the signal definition
+            editor.selection = new vscode.Selection(range.start, range.end);
+            editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+            return;
+          }
+
+          currentSignalIndex++;
+          signalStartOffset = -1;
+        }
+      } else if (char === ']' && braceCount === 0) {
+        // End of signals array
+        break;
+      }
+    }
+  }
+
+  /**
    * Update visualization based on a given position with debouncing and cancellation
    */
   private async updateVisualizationFromPosition(editor: vscode.TextEditor, position: vscode.Position): Promise<void> {
@@ -645,6 +759,7 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
         // Check if cursor is on a "path" property - if so, show signal summary
         if (this.isCursorOnPathProperty(editor, position)) {
           this.currentCommand = undefined;
+          this.currentCommandRange = undefined;
           this.showEmptyState();
           return;
         }
@@ -653,13 +768,15 @@ export class OBDbWorkbenchProvider implements vscode.WebviewViewProvider {
         const commandCheck = isPositionInCommand(editor.document, position);
         if (!commandCheck.isCommand || !commandCheck.commandObject) {
           this.currentCommand = undefined;
+          this.currentCommandRange = undefined;
           this.showEmptyState();
           return;
         }
 
-        // We're in a command definition, store the command
+        // We're in a command definition, store the command and its range
         const command = commandCheck.commandObject;
         this.currentCommand = command;
+        this.currentCommandRange = commandCheck.range;
 
         // Find which signal the cursor is on (pass the command range to limit search)
         const highlightedSignalId = this.findSignalAtCursor(command, editor.document, position, commandCheck.range);

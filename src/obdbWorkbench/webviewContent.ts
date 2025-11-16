@@ -391,6 +391,10 @@ export function getWebviewContent(
     'cell.addEventListener("mouseleave", () => {' +
     'clearHighlights();' +
     '});' +
+    'cell.addEventListener("click", () => {' +
+    'const signalId = cell.getAttribute("data-signal-id");' +
+    'selectSignal(signalId);' +
+    '});' +
     '});' +
     'legendItems.forEach(item => {' +
     'item.addEventListener("mouseenter", () => {' +
@@ -399,6 +403,10 @@ export function getWebviewContent(
     '});' +
     'item.addEventListener("mouseleave", () => {' +
     'clearHighlights();' +
+    '});' +
+    'item.addEventListener("click", () => {' +
+    'const signalId = item.getAttribute("data-signal-id");' +
+    'selectSignal(signalId);' +
     '});' +
     '});' +
     'function highlightSignal(signalId) {' +
@@ -413,6 +421,10 @@ export function getWebviewContent(
     'document.querySelectorAll(".highlight").forEach(el => {' +
     'el.classList.remove("highlight");' +
     '});' +
+    '}' +
+    'function selectSignal(signalId) {' +
+    'const vscode = acquireVsCodeApi();' +
+    'vscode.postMessage({ command: "selectSignal", signalId: signalId });' +
     '}' +
     // Auto-highlight signal if provided
     (highlightedSignalId ? `highlightSignal('${highlightedSignalId}');` : '') +
