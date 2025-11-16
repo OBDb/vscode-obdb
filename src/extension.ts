@@ -135,7 +135,12 @@ export function activate(context: vscode.ExtensionContext) {
       // Get the command object text
       let commandText = document.getText(args.commandRange);
 
-      if (args.optimizedFilter === undefined) {
+      // Check if filter should be removed (undefined, null, or empty object)
+      const shouldRemoveFilter = args.optimizedFilter === undefined ||
+                                  args.optimizedFilter === null ||
+                                  (typeof args.optimizedFilter === 'object' && Object.keys(args.optimizedFilter).length === 0);
+
+      if (shouldRemoveFilter) {
         // Remove the debug filter entirely
         let modifiedText = commandText;
 
