@@ -193,7 +193,6 @@ export async function getSupportedModelYearsForCommand(commandId: string, worksp
   try {
     const years = await cache.getDirectoryEntries(testCasesPath);
     for (const year of years) {
-      console.log(`Checking year: ${year}`);
       const yearPath = path.join(testCasesPath, year);
       try {
         const yearStat = await fs.promises.stat(yearPath);
@@ -225,7 +224,6 @@ export async function getSupportedModelYearsForCommand(commandId: string, worksp
         } catch (err) {
           // It's ok if there's no commands directory
         }
-        console.log(`Found in commands dir: ${foundInYear}`);
 
         if (!foundInYear) {
           const supportFilePath = path.join(yearPath, 'command_support.yaml');
@@ -455,4 +453,111 @@ export function optimizeDebugFilter(existingFilter: any, supportedYears: string[
   }
 
   return optimized;
+}
+
+/**
+ * Batch loads ALL command support data for a workspace in one pass.
+ * This is much faster than calling getCommandSupportInfo() for each command individually.
+ *
+ * @param workspaceRoot The workspace folder root path
+ * @param cache The cache instance to use
+ * @returns Map of normalized commandId → { supported: string[], unsupported: string[] }
+ */
+export async function batchLoadAllCommandSupport(
+  workspaceRoot: string,
+  cache: CommandSupportCache
+): Promise<Map<string, { supported: string[], unsupported: string[] }>> {
+  const result = new Map<string, { supported: string[], unsupported: string[] }>();
+  const testCasesPath = path.join(workspaceRoot, 'tests', 'test_cases');
+
+  try {
+    // Load all years once (O(m) where m = number of years)
+    const years = await cache.getDirectoryEntries(testCasesPath);
+
+    for (const year of years) {
+      const yearPath = path.join(testCasesPath, year);
+
+      try {
+        const yearStat = await fs.promises.stat(yearPath);
+        if (!yearStat.isDirectory()) {
+          continue;
+        }
+
+        // Check command files directory
+        const commandsDir = path.join(yearPath, 'commands');
+        try {
+          const commandsDirStat = await fs.promises.stat(commandsDir);
+          if (commandsDirStat.isDirectory()) {
+            const commandFiles = await cache.getDirectoryEntries(commandsDir);
+            for (const file of commandFiles) {
+              // Extract command ID from filename
+              const fileNameWithoutExt = normalizeCommandId(file.replace(/\.(yaml|yml)$/, ''));
+
+              // Add to result map
+              if (!result.has(fileNameWithoutExt)) {
+                result.set(fileNameWithoutExt, { supported: [], unsupported: [] });
+              }
+              result.get(fileNameWithoutExt)!.supported.push(year);
+            }
+          }
+        } catch (err) {
+          // It's ok if there's no commands directory
+        }
+
+        // Load command_support.yaml file
+        const supportFilePath = path.join(yearPath, 'command_support.yaml');
+        const yamlContent = await cache.getYamlFile(supportFilePath);
+
+        if (yamlContent) {
+          // Process supported commands
+          if (yamlContent.supported_commands_by_ecu) {
+            for (const ecuCommands of Object.values(yamlContent.supported_commands_by_ecu as Record<string, string[]>)) {
+              for (const cmd of ecuCommands as string[]) {
+                const normalizedCmd = normalizeCommandId(cmd);
+                const normalizedStripFilter = normalizeCommandId(stripReceiveFilter(cmd));
+
+                // Add both variants to ensure matches
+                for (const variant of [normalizedCmd, normalizedStripFilter]) {
+                  if (!result.has(variant)) {
+                    result.set(variant, { supported: [], unsupported: [] });
+                  }
+                  if (!result.get(variant)!.supported.includes(year)) {
+                    result.get(variant)!.supported.push(year);
+                  }
+                }
+              }
+            }
+          }
+
+          // Process unsupported commands
+          if (yamlContent.unsupported_commands_by_ecu) {
+            const unsupportedCommands = Object.values(yamlContent.unsupported_commands_by_ecu as Record<string, string[]>)
+              .flat() as string[];
+
+            for (const cmd of unsupportedCommands) {
+              const normalizedCmd = normalizeCommandId(cmd);
+              const normalizedStripFilter = normalizeCommandId(stripReceiveFilter(cmd));
+
+              // Add both variants
+              for (const variant of [normalizedCmd, normalizedStripFilter]) {
+                if (!result.has(variant)) {
+                  result.set(variant, { supported: [], unsupported: [] });
+                }
+                if (!result.get(variant)!.unsupported.includes(year)) {
+                  result.get(variant)!.unsupported.push(year);
+                }
+              }
+            }
+          }
+        }
+      } catch (statErr) {
+        // Skip this year if we can't stat it
+        continue;
+      }
+    }
+  } catch (err) {
+    console.error('Error batch loading command support:', err);
+  }
+
+  return result;
 }

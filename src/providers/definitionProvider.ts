@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import * as jsonc from 'jsonc-parser';
+import { PerformanceMonitor } from '../utils/performanceMonitor';
 
 /**
  * Creates a definition provider for YAML files that enables Cmd+Click navigation
@@ -33,44 +34,68 @@ class CommandDefinitionProvider implements vscode.DefinitionProvider {
     position: vscode.Position,
     token: vscode.CancellationToken
   ): Promise<vscode.Definition | undefined> {
-    // Check if we're in a command_id line
-    const line = document.lineAt(position.line).text;
-
-    // Match "command_id: hdr[.rax].cmd" pattern
-    const commandIdMatch = line.match(/command_id:\s*([0-9A-F.]+)/i);
-    if (!commandIdMatch) {
-      return undefined;
-    }
-
-    // Extract the command ID
-    const commandId = commandIdMatch[1];
-
-    // Check if the cursor is on the command ID part
-    const commandIdStart = line.indexOf(commandId);
-    const commandIdEnd = commandIdStart + commandId.length;
-
-    if (position.character < commandIdStart || position.character > commandIdEnd) {
-      return undefined;
-    }
-
-    // Extract model year from file path
-    const modelYear = this.getModelYearFromPath(document.uri.fsPath);
-    if (!modelYear) {
-      return undefined;
-    }
+    const opId = `cmd-def-${Date.now()}-${Math.random()}`;
+    PerformanceMonitor.startTimer(opId, 'CommandDefinitionProvider.provideDefinition', {
+      fileName: document.fileName,
+      line: position.line
+    });
 
     try {
+      // Check if we're in a command_id line
+      const line = document.lineAt(position.line).text;
+
+      // Match "command_id: hdr[.rax].cmd" pattern
+      const commandIdMatch = line.match(/command_id:\s*([0-9A-F.]+)/i);
+      if (!commandIdMatch) {
+        PerformanceMonitor.endTimer(opId, 'CommandDefinitionProvider.provideDefinition', { result: 'no-match' });
+        return undefined;
+      }
+
+      // Extract the command ID
+      const commandId = commandIdMatch[1];
+
+      // Check if the cursor is on the command ID part
+      const commandIdStart = line.indexOf(commandId);
+      const commandIdEnd = commandIdStart + commandId.length;
+
+      if (position.character < commandIdStart || position.character > commandIdEnd) {
+        PerformanceMonitor.endTimer(opId, 'CommandDefinitionProvider.provideDefinition', { result: 'cursor-not-on-id' });
+        return undefined;
+      }
+
+      // Extract model year from file path
+      const modelYear = this.getModelYearFromPath(document.uri.fsPath);
+      if (!modelYear) {
+        PerformanceMonitor.endTimer(opId, 'CommandDefinitionProvider.provideDefinition', { result: 'no-model-year' });
+        return undefined;
+      }
+
       // Find the signalset definition file and position for this command and model year
       const definition = await this.findSignalsetDefinitionForCommand(commandId, modelYear);
       if (definition) {
+        PerformanceMonitor.endTimer(opId, 'CommandDefinitionProvider.provideDefinition', {
+          result: 'found',
+          commandId,
+          modelYear
+        });
         // Return the definition location
         return new vscode.Location(definition.uri, definition.range);
       }
-    } catch (error) {
-      console.error(`Error finding definition for command ${commandId}:`, error);
-    }
 
-    return undefined;
+      PerformanceMonitor.endTimer(opId, 'CommandDefinitionProvider.provideDefinition', {
+        result: 'not-found',
+        commandId,
+        modelYear
+      });
+      return undefined;
+    } catch (error) {
+      PerformanceMonitor.endTimer(opId, 'CommandDefinitionProvider.provideDefinition', {
+        result: 'error',
+        error: String(error)
+      });
+      console.error(`Error finding definition for command:`, error);
+      return undefined;
+    }
   }
 
   /**
@@ -310,18 +335,26 @@ class SignalDefinitionProvider implements vscode.DefinitionProvider {
     position: vscode.Position,
     token: vscode.CancellationToken
   ): Promise<vscode.Definition | undefined> {
+    const opId = `sig-def-${Date.now()}-${Math.random()}`;
+    PerformanceMonitor.startTimer(opId, 'SignalDefinitionProvider.provideDefinition', {
+      fileName: document.fileName,
+      line: position.line
+    });
+
     try {
       // Parse the YAML document to check if we're in the expected_values section
       const text = document.getText();
       const parsedYaml = yaml.load(text) as any;
 
       if (!parsedYaml || !parsedYaml.test_cases) {
+        PerformanceMonitor.endTimer(opId, 'SignalDefinitionProvider.provideDefinition', { result: 'no-test-cases' });
         return undefined;
       }
 
       // Get the word at the current position
       const wordRange = document.getWordRangeAtPosition(position);
       if (!wordRange) {
+        PerformanceMonitor.endTimer(opId, 'SignalDefinitionProvider.provideDefinition', { result: 'no-word-range' });
         return undefined;
       }
 
@@ -330,25 +363,42 @@ class SignalDefinitionProvider implements vscode.DefinitionProvider {
       // Check if the word is actually a signal ID in the expected_values section
       const line = document.lineAt(position.line).text;
       if (!this.isInExpectedValuesSection(text, position.line) || !line.trim().startsWith(signalId + ':')) {
+        PerformanceMonitor.endTimer(opId, 'SignalDefinitionProvider.provideDefinition', { result: 'not-in-expected-values' });
         return undefined;
       }
 
       // Extract model year from file path
       const modelYear = this.getModelYearFromPath(document.uri.fsPath);
       if (!modelYear) {
+        PerformanceMonitor.endTimer(opId, 'SignalDefinitionProvider.provideDefinition', { result: 'no-model-year' });
         return undefined;
       }
 
       // Find the signalset definition for this signal ID
       const definition = await this.findSignalDefinition(signalId, modelYear);
       if (definition) {
+        PerformanceMonitor.endTimer(opId, 'SignalDefinitionProvider.provideDefinition', {
+          result: 'found',
+          signalId,
+          modelYear
+        });
         return new vscode.Location(definition.uri, definition.range);
       }
-    } catch (error) {
-      console.error(`Error finding signal definition:`, error);
-    }
 
-    return undefined;
+      PerformanceMonitor.endTimer(opId, 'SignalDefinitionProvider.provideDefinition', {
+        result: 'not-found',
+        signalId,
+        modelYear
+      });
+      return undefined;
+    } catch (error) {
+      PerformanceMonitor.endTimer(opId, 'SignalDefinitionProvider.provideDefinition', {
+        result: 'error',
+        error: String(error)
+      });
+      console.error(`Error finding signal definition:`, error);
+      return undefined;
+    }
   }
 
   /**

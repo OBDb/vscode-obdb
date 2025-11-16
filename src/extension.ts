@@ -34,7 +34,7 @@ export function activate(context: vscode.ExtensionContext) {
   console.log('Registered visualization provider for bitmap visualizations');
 
   // Register the diagnostics provider for command validation
-  const diagnosticsProvider = createDiagnosticsProvider();
+  const diagnosticsProvider = createDiagnosticsProvider(commandSupportCache);
   console.log('Registered diagnostics provider for command validation');
 
   // Register the test provider for YAML test files

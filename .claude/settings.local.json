@@ -8,7 +8,10 @@
       "Bash(cat:*)",
       "Bash(npm run compile:*)",
       "Bash(git checkout:*)",
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(tree:*)",
+      "Bash(npm run test:*)",
+      "Bash(npm test:*)"
     ],
     "deny": [],
     "ask": []

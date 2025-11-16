@@ -10,6 +10,7 @@ import {
 } from './utils/commandSupportUtils';
 import { getGenerations, GenerationSet } from './utils/generationsCore';
 import { CommandSupportCache } from './caches/commands/commandSupportCache';
+import { calculateDebugFilter } from './utils/debugFilterCalculator';
 
 interface CliOptions {
   command: string;
@@ -57,70 +58,6 @@ function printUsage(): void {
   console.log('');
   console.log('Options:');
   console.log('  --commit                          Apply the optimizations to the file');
-}
-
-
-/**
- * Calculates the debug filter based on supported years
- * Returns null if the command should have "dbg": true instead
- * @param supportedYears Array of supported model years
- * @param generationSet Generation information for the vehicle
- */
-function calculateDebugFilter(
-  supportedYears: string[],
-  generationSet: GenerationSet
-): any | null {
-  const supported = supportedYears.map(y => parseInt(y, 10));
-
-  // Only use supported years to determine the bounds of the filter
-  // Unsupported years don't give us definitive information - they just mean
-  // the command doesn't work with the current configuration
-  if (supported.length === 0) {
-    return null;
-  }
-
-  let minYear = Math.min(...supported);
-  let maxYear = Math.max(...supported);
-
-  // Constrain to generation bounds if available
-  if (generationSet.firstYear !== undefined && minYear < generationSet.firstYear) {
-    minYear = generationSet.firstYear;
-  }
-  if (generationSet.lastYear !== undefined && maxYear > generationSet.lastYear) {
-    maxYear = generationSet.lastYear;
-  }
-
-  // Build the filter
-  const filter: any = {};
-
-  // "to" is the smallest year minus one (but not before earliest year if specified)
-  const toYear = minYear - 1;
-  if (toYear >= generationSet.firstYear) {
-    filter.to = toYear;
-  }
-
-  // Find years between min and max (exclusive) that are NOT supported
-  // This includes both explicitly unsupported years and unknown years
-  // We keep unsupported years in the debug filter because the command might work with different configurations
-  // Years at the boundaries are covered by "to" and "from"
-  const gapYears: number[] = [];
-  for (let year = minYear + 1; year < maxYear; year++) {
-    if (!supported.includes(year)) {
-      gapYears.push(year);
-    }
-  }
-
-  if (gapYears.length > 0) {
-    filter.years = gapYears;
-  }
-
-  // "from" is the largest year plus one (but not after latest year if specified)
-  const fromYear = maxYear + 1;
-  if (!generationSet.lastYear || fromYear <= generationSet.lastYear + 1) {
-    filter.from = fromYear;
-  }
-
-  return filter;
 }
 
 
@@ -183,6 +120,7 @@ async function optimizeCommand(workspacePath: string, commit: boolean = false): 
       const hdrNode = jsonc.findNodeAtLocation(commandNode, ['hdr']);
       const cmdNode = jsonc.findNodeAtLocation(commandNode, ['cmd']);
       const raxNode = jsonc.findNodeAtLocation(commandNode, ['rax']);
+      const filterNode = jsonc.findNodeAtLocation(commandNode, ['filter']);
 
       if (!hdrNode || !cmdNode) {
         console.log(`  ${index + 1}. [Missing hdr or cmd]`);
@@ -192,6 +130,7 @@ async function optimizeCommand(workspacePath: string, commit: boolean = false): 
       const hdr = jsonc.getNodeValue(hdrNode);
       const cmd = jsonc.getNodeValue(cmdNode);
       const rax = raxNode ? jsonc.getNodeValue(raxNode) : undefined;
+      const commandFilter = filterNode ? jsonc.getNodeValue(filterNode) : undefined;
 
       const commandId = createSimpleCommandId(hdr, cmd, rax);
       const supportedYears = await getSupportedModelYearsForCommand(commandId, workspacePath, cache);
@@ -201,7 +140,7 @@ async function optimizeCommand(workspacePath: string, commit: boolean = false): 
       console.log(`     Supported years: ${supportedYears.length > 0 ? supportedYears.join(', ') : 'none'}`);
       console.log(`     Unsupported years: ${unsupportedYears.length > 0 ? unsupportedYears.join(', ') : 'none'}`);
 
-      const newFilter = calculateDebugFilter(supportedYears, generationSet);
+      const newFilter = calculateDebugFilter(supportedYears, generationSet, commandFilter);
 
       if (newFilter === null) {
         console.log(`     ✅ Setting: "dbg": true`);

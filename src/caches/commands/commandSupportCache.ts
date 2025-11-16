@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { PerformanceMonitor } from '../../utils/performanceMonitor';
 
 /**
  * Cache entry for YAML file data
@@ -24,6 +25,14 @@ interface DirectoryCacheEntry {
 interface CommandSupportCacheEntry {
   supported: string[];
   unsupported: string[];
+  timestamp: number;
+}
+
+/**
+ * Cache entry for batch-loaded command support data
+ */
+interface BatchCommandSupportCacheEntry {
+  data: Map<string, { supported: string[], unsupported: string[] }>;
   timestamp: number;
 }
 
@@ -53,7 +62,9 @@ export class CommandSupportCache {
   private yamlCache: Map<string, YamlCacheEntry> = new Map();
   private directoryCache: Map<string, DirectoryCacheEntry> = new Map();
   private commandSupportCache: Map<string, CommandSupportCacheEntry> = new Map();
+  private batchCommandSupportCache: Map<string, BatchCommandSupportCacheEntry> = new Map();
   private testCasesDirMtime: number = 0;
+  private readonly BATCH_CACHE_MAX_AGE = 60000; // 1 minute
 
   constructor() {}
 
@@ -64,6 +75,7 @@ export class CommandSupportCache {
     this.yamlCache.clear();
     this.directoryCache.clear();
     this.commandSupportCache.clear();
+    this.batchCommandSupportCache.clear();
     this.testCasesDirMtime = 0;
   }
 
@@ -91,6 +103,9 @@ export class CommandSupportCache {
         this.commandSupportCache.delete(key);
       }
     }
+
+    // Clear batch cache for this workspace
+    this.batchCommandSupportCache.delete(workspaceRoot);
   }
 
   /**
@@ -123,18 +138,32 @@ export class CommandSupportCache {
    * Get cached YAML file data or read and cache it
    */
   async getYamlFile(filePath: string): Promise<any | null> {
+    const opId = `cache-yaml-${Date.now()}-${Math.random()}`;
+    PerformanceMonitor.startTimer(opId, 'CommandSupportCache.getYamlFile', { filePath });
+
     try {
       const stat = await fs.promises.stat(filePath);
       const currentMtime = stat.mtimeMs;
 
       const cached = this.yamlCache.get(filePath);
       if (cached && cached.mtime === currentMtime) {
+        PerformanceMonitor.endTimer(opId, 'CommandSupportCache.getYamlFile', {
+          result: 'cache-hit',
+          filePath
+        });
         return cached.data;
       }
 
       // Read and parse the file
+      const readStartTime = performance.now();
       const content = await fs.promises.readFile(filePath, 'utf-8');
+      const readTime = performance.now() - readStartTime;
+      PerformanceMonitor.logMetric('CommandSupportCache.readFile', readTime, { filePath });
+
+      const parseStartTime = performance.now();
       const data = loadCommandSupportYaml(content);
+      const parseTime = performance.now() - parseStartTime;
+      PerformanceMonitor.logMetric('CommandSupportCache.parseYAML', parseTime, { filePath });
 
       // Cache it
       this.yamlCache.set(filePath, {
@@ -142,8 +171,20 @@ export class CommandSupportCache {
         data: data
       });
 
+      PerformanceMonitor.endTimer(opId, 'CommandSupportCache.getYamlFile', {
+        result: 'cache-miss',
+        filePath,
+        readTime,
+        parseTime
+      });
+
       return data;
     } catch (err) {
+      PerformanceMonitor.endTimer(opId, 'CommandSupportCache.getYamlFile', {
+        result: 'error',
+        filePath,
+        error: String(err)
+      });
       // File doesn't exist or can't be read
       return null;
     }
@@ -153,12 +194,20 @@ export class CommandSupportCache {
    * Get cached directory listing or read and cache it
    */
   async getDirectoryEntries(dirPath: string): Promise<string[]> {
+    const opId = `cache-dir-${Date.now()}-${Math.random()}`;
+    PerformanceMonitor.startTimer(opId, 'CommandSupportCache.getDirectoryEntries', { dirPath });
+
     try {
       const stat = await fs.promises.stat(dirPath);
       const currentMtime = stat.mtimeMs;
 
       const cached = this.directoryCache.get(dirPath);
       if (cached && cached.mtime === currentMtime) {
+        PerformanceMonitor.endTimer(opId, 'CommandSupportCache.getDirectoryEntries', {
+          result: 'cache-hit',
+          dirPath,
+          entryCount: cached.entries.length
+        });
         return cached.entries;
       }
 
@@ -171,8 +220,19 @@ export class CommandSupportCache {
         entries: entries
       });
 
+      PerformanceMonitor.endTimer(opId, 'CommandSupportCache.getDirectoryEntries', {
+        result: 'cache-miss',
+        dirPath,
+        entryCount: entries.length
+      });
+
       return entries;
     } catch (err) {
+      PerformanceMonitor.endTimer(opId, 'CommandSupportCache.getDirectoryEntries', {
+        result: 'error',
+        dirPath,
+        error: String(err)
+      });
       return [];
     }
   }
@@ -182,7 +242,12 @@ export class CommandSupportCache {
    */
   getCommandSupport(workspaceRoot: string, commandId: string): CommandSupportCacheEntry | null {
     const key = `${workspaceRoot}:${commandId}`;
-    return this.commandSupportCache.get(key) || null;
+    const result = this.commandSupportCache.get(key) || null;
+    PerformanceMonitor.logMetric('CommandSupportCache.getCommandSupport', 0, {
+      commandId,
+      result: result ? 'hit' : 'miss'
+    });
+    return result;
   }
 
   /**
@@ -207,5 +272,37 @@ export class CommandSupportCache {
         this.commandSupportCache.delete(key);
       }
     }
+  }
+
+  /**
+   * Get batch-loaded command support data (cached)
+   */
+  getBatchCommandSupport(workspaceRoot: string): Map<string, { supported: string[], unsupported: string[] }> | null {
+    const cached = this.batchCommandSupportCache.get(workspaceRoot);
+    if (!cached) {
+      return null;
+    }
+
+    // Check if cache is still valid
+    const now = Date.now();
+    if (now - cached.timestamp > this.BATCH_CACHE_MAX_AGE) {
+      this.batchCommandSupportCache.delete(workspaceRoot);
+      return null;
+    }
+
+    return cached.data;
+  }
+
+  /**
+   * Set batch-loaded command support data in cache
+   */
+  setBatchCommandSupport(
+    workspaceRoot: string,
+    data: Map<string, { supported: string[], unsupported: string[] }>
+  ): void {
+    this.batchCommandSupportCache.set(workspaceRoot, {
+      data,
+      timestamp: Date.now()
+    });
   }
 }
