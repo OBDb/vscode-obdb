@@ -25,8 +25,9 @@ export class PerformanceMonitor {
     const startTime = performance.now();
     this.timers.set(operationId, startTime);
 
-    const contextStr = context ? ` [${JSON.stringify(context)}]` : '';
-    console.log(`[PERF START] ${operationName} (${operationId})${contextStr}`);
+    // Disabled logging to reduce noise
+    // const contextStr = context ? ` [${JSON.stringify(context)}]` : '';
+    // console.log(`[PERF START] ${operationName} (${operationId})${contextStr}`);
   }
 
   /**
@@ -60,10 +61,10 @@ export class PerformanceMonitor {
       this.metrics.shift();
     }
 
-    // Log with color coding based on duration
-    const severity = this.getSeverity(durationMs);
-    const contextStr = context ? ` [${JSON.stringify(context)}]` : '';
-    console.log(`[PERF ${severity}] ${operationName} (${operationId}): ${durationMs.toFixed(2)}ms${contextStr}`);
+    // Disabled logging to reduce noise
+    // const severity = this.getSeverity(durationMs);
+    // const contextStr = context ? ` [${JSON.stringify(context)}]` : '';
+    // console.log(`[PERF ${severity}] ${operationName} (${operationId}): ${durationMs.toFixed(2)}ms${contextStr}`);
 
     return durationMs;
   }
@@ -133,9 +134,10 @@ export class PerformanceMonitor {
       this.metrics.shift();
     }
 
-    const severity = this.getSeverity(durationMs);
-    const contextStr = context ? ` [${JSON.stringify(context)}]` : '';
-    console.log(`[PERF ${severity}] ${operationName}: ${durationMs.toFixed(2)}ms${contextStr}`);
+    // Disabled logging to reduce noise
+    // const severity = this.getSeverity(durationMs);
+    // const contextStr = context ? ` [${JSON.stringify(context)}]` : '';
+    // console.log(`[PERF ${severity}] ${operationName}: ${durationMs.toFixed(2)}ms${contextStr}`);
   }
 
   /**
