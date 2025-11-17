@@ -342,13 +342,28 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
+      console.log('Workspace root:', workspaceRoot);
+
       // Load batch support data
-      const batchSupportData = commandSupportCache.getBatchCommandSupport(workspaceRoot) ||
-                                await batchLoadAllCommandSupport(workspaceRoot, commandSupportCache);
-      if (batchSupportData) {
-        commandSupportCache.setBatchCommandSupport(workspaceRoot, batchSupportData);
-      } else {
-        vscode.window.showErrorMessage('Failed to load command support data');
+      let batchSupportData = commandSupportCache.getBatchCommandSupport(workspaceRoot);
+      console.log('Cached batch support data size:', batchSupportData?.size || 0);
+      if (batchSupportData && batchSupportData.size > 0) {
+        // Log first few keys
+        const keys = Array.from(batchSupportData.keys()).slice(0, 5);
+        console.log('Sample command IDs in batch data:', keys);
+      }
+
+      if (!batchSupportData) {
+        console.log('Loading batch support data from disk...');
+        batchSupportData = await batchLoadAllCommandSupport(workspaceRoot, commandSupportCache);
+        console.log('Loaded batch support data size:', batchSupportData?.size || 0);
+        if (batchSupportData) {
+          commandSupportCache.setBatchCommandSupport(workspaceRoot, batchSupportData);
+        }
+      }
+
+      if (!batchSupportData || batchSupportData.size === 0) {
+        vscode.window.showErrorMessage('Failed to load command support data or no commands found');
         return;
       }
 
@@ -361,8 +376,12 @@ export function activate(context: vscode.ExtensionContext) {
       const generationSet = new GenerationSet(generations);
 
       // Scan all commands for optimization opportunities
+      let totalCommands = 0;
+      let commandsWithDebug = 0;
+      let commandsWithSupportedYears = 0;
       for (const commandNode of commandsProperty.children) {
         if (commandNode.type === 'object' && commandNode.children) {
+          totalCommands++;
           let hdr: string | undefined;
           let cmdProperty: any;
           let rax: string | undefined;
@@ -406,8 +425,11 @@ export function activate(context: vscode.ExtensionContext) {
             }
           }
 
-          // Check if this command has dbg: true and either needs a new debug filter or has one that can be optimized
-          if (hasDebug && hdr && cmdProperty) {
+          // Check if this command needs debug filter optimization:
+          // 1. Has dbg: true (needs new filter), OR
+          // 2. Has existing dbgfilter (needs optimization)
+          if ((hasDebug || existingDbgFilter) && hdr && cmdProperty) {
+            if (hasDebug) commandsWithDebug++;
             let cmdValue: string | Record<string, string> | undefined;
 
             if (cmdProperty.type === 'object' && cmdProperty.children && cmdProperty.children[0] && cmdProperty.children[0].children) {
@@ -423,18 +445,46 @@ export function activate(context: vscode.ExtensionContext) {
               const commandId = createSimpleCommandId(hdr, cmdValue, rax);
               const normalizedCommandId = normalizeCommandId(commandId);
               const normalizedStripFilter = normalizeCommandId(stripReceiveFilter(commandId));
+
+              if (commandsWithDebug <= 3) {
+                console.log(`Sample command ${commandsWithDebug}: original=${commandId}, normalized=${normalizedCommandId}, stripped=${normalizedStripFilter}`);
+                console.log(`  Lookup result:`, batchSupportData.get(normalizedCommandId) || batchSupportData.get(normalizedStripFilter) || 'NOT FOUND');
+              }
+
               const supportData = batchSupportData.get(normalizedCommandId) || batchSupportData.get(normalizedStripFilter) || { supported: [], unsupported: [] };
               const supportedYears = supportData.supported;
 
-              if (supportedYears.length > 0) {
-                const calculatedFilter = calculateDebugFilter(supportedYears, generationSet, commandFilter);
+              // For commands with dbg:true, we need supported years to create a filter
+              // For commands with existing dbgfilter, we can optimize regardless
+              const canOptimize = hasDebug ? supportedYears.length > 0 : true;
+
+              if (canOptimize) {
+                if (supportedYears.length > 0) {
+                  commandsWithSupportedYears++;
+                }
+
+                const calculatedFilter = supportedYears.length > 0
+                  ? calculateDebugFilter(supportedYears, generationSet, commandFilter)
+                  : null;
+
+                if (commandsWithDebug <= 3 || (existingDbgFilter && optimizations.length < 3)) {
+                  console.log(`Command ${commandId}: calculatedFilter =`, calculatedFilter, 'existingDbgFilter =', existingDbgFilter);
+                }
 
                 // Check if we should add/update the filter
-                // - If no existing filter and calculated filter is not empty, add it
-                // - If existing filter differs from calculated filter, update it
-                const shouldApply = !existingDbgFilter
-                  ? (calculatedFilter && Object.keys(calculatedFilter).length > 0)
-                  : (JSON.stringify(existingDbgFilter) !== JSON.stringify(calculatedFilter || {}));
+                // - If no existing filter and calculated filter is not empty, add it (dbg:true case)
+                // - If existing filter differs from calculated filter, update it (existing dbgfilter case)
+                let shouldApply = false;
+
+                if (hasDebug && !existingDbgFilter) {
+                  // Case 1: dbg:true without dbgfilter - add new filter if calculated filter is not empty
+                  shouldApply = calculatedFilter && Object.keys(calculatedFilter).length > 0;
+                } else if (existingDbgFilter) {
+                  // Case 2: existing dbgfilter - optimize if different from calculated
+                  const existingFilterStr = JSON.stringify(existingDbgFilter);
+                  const calculatedFilterStr = JSON.stringify(calculatedFilter || {});
+                  shouldApply = existingFilterStr !== calculatedFilterStr;
+                }
 
                 if (shouldApply) {
                   const range = new vscode.Range(
@@ -445,7 +495,7 @@ export function activate(context: vscode.ExtensionContext) {
                   optimizations.push({
                     range,
                     optimizedFilter: calculatedFilter,
-                    isNew: !existingDbgFilter
+                    isNew: hasDebug && !existingDbgFilter
                   });
                 }
               }
@@ -454,8 +504,10 @@ export function activate(context: vscode.ExtensionContext) {
         }
       }
 
+      console.log(`Total commands: ${totalCommands}, Commands with dbg: ${commandsWithDebug}, Commands with supported years: ${commandsWithSupportedYears}, Optimizations found: ${optimizations.length}`);
+
       if (optimizations.length === 0) {
-        vscode.window.showInformationMessage('No debug filter optimizations found');
+        vscode.window.showInformationMessage(`No debug filter optimizations found (checked ${totalCommands} commands, ${commandsWithDebug} with dbg:true, ${commandsWithSupportedYears} with supported years)`);
         return;
       }
 
