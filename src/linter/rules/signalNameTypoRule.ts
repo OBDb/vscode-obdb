@@ -33,7 +33,8 @@ export class SignalNameTypoRule implements ILinterRule {
     'differential', 'transaxle', 'halfshaft', 'driveshaft', 'propshaft',
     'coolant', 'antifreeze', 'brake', 'caliper', 'rotor', 'seatbelt',
     'airbag', 'traction', 'stability', 'cruise', 'parking', 'reverse',
-    'overdrive', 'lockup', 'downshift', 'upshift', 'kickdown', 'recirculation'
+    'overdrive', 'lockup', 'downshift', 'upshift', 'kickdown', 'recirculation',
+    'wastegate', 'evaporative',
   ]);
 
   constructor() {
