@@ -14,19 +14,20 @@ export class SignalNameTypoRule implements ILinterRule {
 
   // Common automotive/technical abbreviations that are valid even if not in dictionary
   private readonly validAbbreviations: Set<string> = new Set([
-    'abs', 'esp', 'cvt', 'rpm', 'led', 'obd', 'ecu', 'pcm', 'bcm', 'tcm',
+    'abs', 'atf', 'esp', 'cvt', 'rpm', 'led', 'obd', 'ecu', 'pcm', 'bcm', 'tcm',
     'vin', 'dtc', 'pid', 'mil', 'egr', 'dpf', 'def', 'scr', 'nox', 'hc',
     'co', 'co2', 'o2', 'afr', 'maf', 'map', 'tps', 'iac', 'evap', 'canp',
     'vvt', 'vtec', 'cam', 'crank', 'knock', 'egt', 'iat', 'ect', 'cht', 'oil',
     'psig', 'psi', 'kpa', 'mph', 'kmh', 'gph', 'lph', 'mpg', 'lpkm',
     'deg', 'temp', 'vol', 'amp', 'ohm', 'hz', 'kwh', 'btuh', 'cfm',
     'api', 'can', 'lin', 'pwm', 'gpio', 'adc', 'dac', 'spi', 'i2c',
-    'uart', 'usb', 'tcp', 'udp', 'http', 'https', 'json', 'xml', 'csv'
+    'uart', 'usb', 'tcp', 'udp', 'http', 'https', 'json', 'xml', 'csv',
+    'tpms'
   ]);
 
   // Words that are commonly flagged but are actually correct in automotive context
   private readonly domainSpecificWords: Set<string> = new Set([
-    'actuator', 'solenoid', 'injector', 'turbo', 'intercooler', 'radiator',
+    'actuator', 'ecall', 'solenoid', 'injector', 'turbo', 'intercooler', 'radiator',
     'thermostat', 'alternator', 'inverter', 'converter', 'catalyst',
     'manifold', 'throttle', 'drivetrain', 'powertrain', 'driveline',
     'camshaft', 'crankshaft', 'flywheel', 'flexplate', 'torque', 'clutch',
@@ -34,7 +35,7 @@ export class SignalNameTypoRule implements ILinterRule {
     'coolant', 'antifreeze', 'brake', 'caliper', 'rotor', 'seatbelt',
     'airbag', 'traction', 'stability', 'cruise', 'parking', 'reverse',
     'overdrive', 'lockup', 'downshift', 'upshift', 'kickdown', 'recirculation',
-    'wastegate', 'evaporative',
+    'wastegate', 'evaporative', 'regen',
   ]);
 
   constructor() {

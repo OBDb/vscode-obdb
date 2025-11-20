@@ -1,6 +1,14 @@
 import * as jsonc from 'jsonc-parser';
 import { ILinterRule, LintResult, Signal, LintSeverity, LinterRuleConfig } from './rule';
 
+// Brand names and special terms that should be preserved as-is
+const PRESERVED_TERMS = new Set([
+  'eCall',
+  'eDrive',
+  'iDrive',
+  'xDrive',
+]);
+
 /**
  * Rule that validates that signal names follow sentence case convention
  * (first word capitalized, remaining words lowercase), ignoring acronyms
@@ -56,7 +64,7 @@ export class SignalSentenceCaseRule implements ILinterRule {
   }
 
   /**
-   * Converts a string to sentence case, preserving acronyms
+   * Converts a string to sentence case, preserving acronyms and brand names
    * @param text The text to convert
    * @returns Sentence-cased text
    */
@@ -67,12 +75,23 @@ export class SignalSentenceCaseRule implements ILinterRule {
     const words = text.split(' ');
     if (words.length === 0) return text;
 
-    // Capitalize first word
-    words[0] = this.capitalizeFirst(words[0]);
+    // Handle first word - check for preserved terms first
+    if (PRESERVED_TERMS.has(words[0])) {
+      // Keep preserved terms as-is
+    } else {
+      // Capitalize first word
+      words[0] = this.capitalizeFirst(words[0]);
+    }
 
-    // Lowercase remaining words, preserving acronyms
+    // Lowercase remaining words, preserving acronyms and brand names
     for (let i = 1; i < words.length; i++) {
       const word = words[i];
+
+      // Check if the word is a preserved term
+      if (PRESERVED_TERMS.has(word)) {
+        // Keep preserved terms as they are
+        continue;
+      }
 
       // Check if the word is an acronym (all uppercase)
       if (this.isAcronym(word)) {
