@@ -17,7 +17,7 @@ export function calculateOptimizedFilter(
   unsupportedYears: string[],
   generationSet: GenerationSet
 ): YearFilter | null {
-  const supported = supportedYears.map(y => parseInt(y, 10));
+  const supported = supportedYears.map(y => parseInt(y, 10)).filter(y => y >= 1996);
   const unsupported = unsupportedYears.map(y => parseInt(y, 10));
 
   if (supported.length === 0 && unsupported.length === 0) {
@@ -34,10 +34,10 @@ export function calculateOptimizedFilter(
   }
 
   // Find years that should be included in the filter:
-  // - Confirmed supported years
-  // - Years that are NOT confirmed unsupported (uncertain years)
+  // - Confirmed supported years (1996 or later)
+  // - Years that are NOT confirmed unsupported (uncertain years) and are 1996 or later
   const allowedYears = allYears.filter(year =>
-    supported.includes(year) || !unsupported.includes(year)
+    year >= 1996 && (supported.includes(year) || !unsupported.includes(year))
   );
 
   if (allowedYears.length === allYears.length) {
