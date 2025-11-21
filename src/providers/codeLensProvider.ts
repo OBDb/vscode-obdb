@@ -289,7 +289,7 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
               const hasOnlyFrom = commandFilter.from !== undefined && commandFilter.to === undefined && !commandFilter.years;
 
               if (hasOnlyTo) {
-                filterBoundaries.add(commandFilter.to + 1); // Boundary is after the "to" year
+                filterBoundaries.add(commandFilter.to); // Boundary is at the "to" year
               }
               if (hasOnlyFrom) {
                 filterBoundaries.add(commandFilter.from); // Boundary is at the "from" year
@@ -421,7 +421,7 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
                   const hasOnlyFrom = commandFilter.from !== undefined && commandFilter.to === undefined && !commandFilter.years;
 
                   if (hasOnlyTo) {
-                    commandFilterBoundaries.add(commandFilter.to + 1);
+                    commandFilterBoundaries.add(commandFilter.to);
                   }
                   if (hasOnlyFrom) {
                     commandFilterBoundaries.add(commandFilter.from);
