@@ -2,6 +2,103 @@ import * as jsonc from 'jsonc-parser';
 import { ILinterRule, LintResult, Signal, LintSeverity, LinterRuleConfig, Command } from './rule';
 
 /**
+ * Interface for year filter
+ */
+interface YearFilter {
+  from?: number;
+  to?: number;
+  years?: number[];
+}
+
+/**
+ * Helper function to get all years that a filter allows
+ * @param filter The year filter
+ * @param minYear Minimum year to consider (default: 1990)
+ * @param maxYear Maximum year to consider (default: current year + 10)
+ * @returns Set of years that the filter allows
+ */
+function getYearsAllowedByFilter(filter?: YearFilter, minYear: number = 1990, maxYear: number = new Date().getFullYear() + 10): Set<number> {
+  const allowedYears = new Set<number>();
+
+  if (!filter) {
+    // No filter means all years are allowed
+    for (let year = minYear; year <= maxYear; year++) {
+      allowedYears.add(year);
+    }
+    return allowedYears;
+  }
+
+  const hasFrom = filter.from !== undefined;
+  const hasTo = filter.to !== undefined;
+  const hasYears = filter.years !== undefined && filter.years.length > 0;
+
+  // Start with an empty set or full set depending on whether we have from/to constraints
+  if (hasFrom || hasTo) {
+    // Add years based on from/to constraints
+    for (let year = minYear; year <= maxYear; year++) {
+      let allowed = false;
+
+      if (hasFrom && hasTo) {
+        if (filter.to! < filter.from!) {
+          // OR condition: year <= to OR year >= from
+          allowed = year <= filter.to! || year >= filter.from!;
+        } else {
+          // AND condition: from <= year <= to
+          allowed = year >= filter.from! && year <= filter.to!;
+        }
+      } else if (hasFrom) {
+        // Only from: year >= from
+        allowed = year >= filter.from!;
+      } else if (hasTo) {
+        // Only to: year <= to
+        allowed = year <= filter.to!;
+      }
+
+      if (allowed) {
+        allowedYears.add(year);
+      }
+    }
+  }
+
+  // Add explicit years
+  if (hasYears) {
+    for (const year of filter.years!) {
+      allowedYears.add(year);
+    }
+  }
+
+  // If no constraints at all, allow all years
+  if (!hasFrom && !hasTo && !hasYears) {
+    for (let year = minYear; year <= maxYear; year++) {
+      allowedYears.add(year);
+    }
+  }
+
+  return allowedYears;
+}
+
+/**
+ * Checks if two year filters have any overlapping years
+ * @param filter1 First year filter
+ * @param filter2 Second year filter
+ * @returns true if the filters overlap, false otherwise
+ */
+function doFiltersOverlap(filter1?: YearFilter, filter2?: YearFilter): boolean {
+  // Get the year ranges for both filters
+  const years1 = getYearsAllowedByFilter(filter1);
+  const years2 = getYearsAllowedByFilter(filter2);
+
+  // Check if there's any intersection
+  for (const year of years1) {
+    if (years2.has(year)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Rule that validates that commands with the same 'cmd' definition have 'rax' filters
  * to avoid ambiguous command responses
  */
@@ -104,17 +201,37 @@ export class CommandRaxDuplicationRule implements ILinterRule {
         // Find any rax groups with duplicates
         for (const [raxValue, raxGroup] of raxGroups.entries()) {
           if (raxGroup.length >= 2) {
-            for (const { command, node } of raxGroup) {
-              // Find the rax node to highlight in the error
-              const raxNode = jsonc.findNodeAtLocation(node, ['rax']) ||
-                            jsonc.findNodeAtLocation(node, ['cmd']) ||
-                            node;
+            // Check each pair of commands with the same rax to see if their filters overlap
+            for (let i = 0; i < raxGroup.length; i++) {
+              const { node } = raxGroup[i];
+              let hasOverlap = false;
 
-              results.push({
-                ruleId: this.getConfig().id,
-                message: `Commands with the same cmd=${cmdKey} have duplicate 'rax=${raxValue}' values. Each command needs a unique 'rax' filter.`,
-                node: raxNode,
-              });
+              // Check if this command's filter overlaps with any other command's filter in the same rax group
+              for (let j = 0; j < raxGroup.length; j++) {
+                if (i !== j) {
+                  const filter1 = raxGroup[i].command.filter as YearFilter | undefined;
+                  const filter2 = raxGroup[j].command.filter as YearFilter | undefined;
+
+                  if (doFiltersOverlap(filter1, filter2)) {
+                    hasOverlap = true;
+                    break;
+                  }
+                }
+              }
+
+              // Only report an error if the filters actually overlap
+              if (hasOverlap) {
+                // Find the rax node to highlight in the error
+                const raxNode = jsonc.findNodeAtLocation(node, ['rax']) ||
+                              jsonc.findNodeAtLocation(node, ['cmd']) ||
+                              node;
+
+                results.push({
+                  ruleId: this.getConfig().id,
+                  message: `Commands with the same cmd=${cmdKey} have duplicate 'rax=${raxValue}' values. Each command needs a unique 'rax' filter.`,
+                  node: raxNode,
+                });
+              }
             }
           }
         }
