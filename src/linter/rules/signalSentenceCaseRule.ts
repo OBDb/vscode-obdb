@@ -122,12 +122,26 @@ export class SignalSentenceCaseRule implements ILinterRule {
    * - All uppercase
    * - At least 1 character long (to allow single-letter acronyms like "D", "P", "R", etc.)
    *
-   * Also handles plural acronyms like "DTCs" that should remain uppercase
+   * Also handles:
+   * - Plural acronyms like "DTCs" that should remain uppercase
+   * - Slash-separated acronyms like "A/C" (air conditioning)
    * @param word The word to check
    * @returns True if the word is an acronym
    */
   private isAcronym(word: string): boolean {
     if (!word || word.length < 1) return false;
+
+    // Check for slash-separated acronyms (e.g., "A/C", "I/O")
+    if (word.includes('/')) {
+      const parts = word.split('/');
+      // Check if all parts are uppercase letters
+      const allPartsUppercase = parts.every(part =>
+        part.length > 0 && part === part.toUpperCase() && /^[A-Z0-9]+$/.test(part)
+      );
+      if (allPartsUppercase) {
+        return true;
+      }
+    }
 
     // Check for standard acronyms (all uppercase)
     if (word === word.toUpperCase() && /^[A-Z0-9]+$/.test(word)) {

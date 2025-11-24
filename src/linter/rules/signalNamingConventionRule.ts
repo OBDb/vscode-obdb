@@ -28,6 +28,25 @@ export class SignalNamingConventionRule implements ILinterRule {
     const idNode = jsonc.findNodeAtLocation(node, ['id']);
     if (!idNode) return null;
 
+    // Check for trailing underscore
+    if (signal.id.endsWith('_')) {
+      const suggestedId = signal.id.replace(/_+$/, '');
+
+      return {
+        ruleId: this.getConfig().id,
+        message: `Signal ID should not end with underscore. Found: "${signal.id}"`,
+        node: idNode,
+        suggestion: {
+          title: `Remove trailing underscore: "${suggestedId}"`,
+          edits: [{
+            newText: `"${suggestedId}"`,
+            offset: idNode.offset,
+            length: idNode.length
+          }]
+        }
+      };
+    }
+
     // Check that IDs use all caps with underscores
     const isValidFormat = /^[A-Z0-9_]+$/.test(signal.id);
     if (!isValidFormat) {
