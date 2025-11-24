@@ -35,6 +35,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'HVAC': 'Heating, ventilation, and air conditioning',
   'ICE': 'Internal combustion engine',
   'ICM': 'Ignition control module',
+  'IGN': 'Ignition',
   'IMA': 'Integrated motor assist',
   'IMMO': 'Immobilizer',
   'IPC': 'Instrument panel cluster',
