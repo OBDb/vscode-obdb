@@ -61,37 +61,42 @@ export class SignalPathSuggestionRule implements ILinterRule {
    * @returns Suggested path or undefined if no match
    */
   private getSuggestedPath(signalId: string): string | undefined {
-    // Standard pattern mappings from ID keywords to paths
-    const patternMappings: { [pattern: string]: string } = {
+    // Pattern mappings from ID keywords to paths
+    // Order matters: more specific patterns should come before generic ones
+    const patternMappings: Array<{ pattern: RegExp; path: string }> = [
+      // Lights related (must come before other patterns to catch *_LIGHT signals)
+      // Match _LIGHT at word boundary (end or followed by _/non-letter)
+      { pattern: /_LIGHT(?:_|$|[^A-Z])/i, path: 'Lights' },
+      { pattern: /(?:^|_)LIGHT_/i, path: 'Lights' },
+
       // Doors related
-      'DOOR': 'Doors',
-      '_DOOR_': 'Doors',
+      { pattern: /(?:^|_)DOOR(?:_|$|[^A-Z])/i, path: 'Doors' },
 
       // Body related
-      'TRUNK': 'Doors',
-      'HOOD': 'Doors',
-      'WINDOW': 'Windows',
+      { pattern: /(?:^|_)TRUNK(?:_|$|[^A-Z])/i, path: 'Doors' },
+      { pattern: /(?:^|_)HOOD(?:_|$|[^A-Z])/i, path: 'Doors' },
+      { pattern: /(?:^|_)WINDOW(?:_|$|[^A-Z])/i, path: 'Windows' },
 
       // Transmission related
-      'GEAR': 'Transmission',
+      { pattern: /(?:^|_)GEAR(?:_|$|[^A-Z])/i, path: 'Transmission' },
 
       // Chassis related
-      'BRAKE': 'Control',
-      'HANDBRAKE': 'Control',
+      { pattern: /(?:^|_)HANDBRAKE(?:_|$|[^A-Z])/i, path: 'Control' },
+      { pattern: /(?:^|_)BRAKE(?:_|$|[^A-Z])/i, path: 'Control' },
 
-      // Seatbelts related
-      'BELT': 'Seatbelts',
-      'SEATBELT': 'Seatbelts',
+      // Seatbelts related (more specific first)
+      { pattern: /(?:^|_)SEATBELT(?:_|$|[^A-Z])/i, path: 'Seatbelts' },
+      { pattern: /(?:^|_)BELT(?:_|$|[^A-Z])/i, path: 'Seatbelts' },
 
       // Tire related
-      '_TP_': 'Tires',
-      '_TT_': 'Tires',
-    };
+      { pattern: /_TP_/i, path: 'Tires' },
+      { pattern: /_TT_/i, path: 'Tires' },
+    ];
 
-    // Check the ID against our pattern mappings
-    for (const pattern in patternMappings) {
-      if (signalId.includes(pattern)) {
-        return patternMappings[pattern];
+    // Check the ID against our pattern mappings (order is preserved)
+    for (const { pattern, path } of patternMappings) {
+      if (pattern.test(signalId)) {
+        return path;
       }
     }
 
