@@ -36,7 +36,7 @@ export class SignalPathSuggestionRule implements ILinterRule {
     const suggestedPath = this.getSuggestedPath(signalId);
 
     // If we found a suggestion and it's different from the current path
-    if (suggestedPath && suggestedPath !== currentPath) {
+    if (suggestedPath && !currentPath.startsWith(suggestedPath)) {  // Allow subpaths
       return {
         ruleId: this.getConfig().id,
         message: `Signal ID "${signalId}" suggests it should be in path "${suggestedPath}" instead of "${currentPath}"`,
