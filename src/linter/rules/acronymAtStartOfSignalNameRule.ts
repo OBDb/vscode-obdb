@@ -43,6 +43,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'OBD': 'On-board diagnostics',
   'OCS': 'Occupant classification system',
   'OCV': 'Oil control valve',
+  'OSV': 'Oil supply valve',
   'PCM': 'Powertrain control module',
   'PDC': 'Park distance control',
   'RCM': 'Restraint control module',

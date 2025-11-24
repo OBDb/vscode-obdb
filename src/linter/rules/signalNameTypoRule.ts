@@ -22,7 +22,7 @@ export class SignalNameTypoRule implements ILinterRule {
     'deg', 'temp', 'vol', 'amp', 'ohm', 'hz', 'kwh', 'btuh', 'cfm',
     'api', 'can', 'lin', 'pwm', 'gpio', 'adc', 'dac', 'spi', 'i2c',
     'uart', 'usb', 'tcp', 'udp', 'http', 'https', 'json', 'xml', 'csv',
-    'tpms', 'ebs', 'cpc', 'ocv', 'awd',
+    'tpms', 'ebs', 'cpc', 'ocv', 'awd', 'osv',
   ]);
 
   // Words that are commonly flagged but are actually correct in automotive context
