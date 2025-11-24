@@ -23,7 +23,7 @@ export class SignalNameTypoRule implements ILinterRule {
     'api', 'can', 'lin', 'pwm', 'gpio', 'adc', 'dac', 'spi', 'i2c',
     'uart', 'usb', 'tcp', 'udp', 'http', 'https', 'json', 'xml', 'csv',
     'tpms', 'ebs', 'cpc', 'ocv', 'awd', 'osv', 'evse', 'cp', 'pd', 'obc',
-    'mdps', 'vcs', 'ign', 'ewp', 'a/c',
+    'mdps', 'vcs', 'ign', 'ewp', 'a/c', 'ldc',
   ]);
 
   // Words that are commonly flagged but are actually correct in automotive context

@@ -126,7 +126,8 @@ export class ConsolidatedNamingRule implements ILinterRule {
       const currentName = String(nameNode.value);
       const suggestedName = pattern.nameFormatter(signal);
 
-      if (suggestedName && currentName !== suggestedName) {
+      // Check if current name starts with the suggested name pattern
+      if (suggestedName && !currentName.startsWith(suggestedName)) {
         return {
           ruleId: this.getConfig().id,
           message: `${pattern.description}. Current: "${currentName}", Suggested: "${suggestedName}"`,
