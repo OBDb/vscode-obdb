@@ -10,6 +10,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'ADAS': 'Advanced driver assistance systems',
   'AFR': 'Air-fuel ratio',
   'ATF': 'Automatic transmission fluid',
+  'AWD': 'All-wheel drive',
   'BCM': 'Body control module',
   'BMS': 'Battery management system',
   'CAN': 'Controller area network',
