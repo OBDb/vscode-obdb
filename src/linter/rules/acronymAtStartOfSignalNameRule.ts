@@ -41,6 +41,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'MAP': 'Manifold absolute pressure',
   'OBD': 'On-board diagnostics',
   'OCS': 'Occupant classification system',
+  'OCV': 'Oil control valve',
   'PCM': 'Powertrain control module',
   'PDC': 'Park distance control',
   'RCM': 'Restraint control module',
