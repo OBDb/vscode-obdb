@@ -41,6 +41,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'IMMO': 'Immobilizer',
   'IPC': 'Instrument panel cluster',
   'LCA': 'Lane change assist',
+  'LDC': 'Low-voltage DC-DC converter',
   'LKA': 'Lane keep assist',
   'MAF': 'Mass air flow',
   'MAP': 'Manifold absolute pressure',
