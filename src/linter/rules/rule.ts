@@ -8,6 +8,7 @@ export interface Signal {
   id: string;
   path: string;
   fmt: {
+    len?: number;
     unit?: string;
     [key: string]: any;
   };

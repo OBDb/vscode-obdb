@@ -19,6 +19,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'CVVT': 'Continuously variable valve timing',
   'DPF': 'Diesel particulate filter',
   'DSC': 'Dynamic stability control',
+  'ECB': 'Electronic control brake',
   'ECM': 'Engine control module',
   'ECU': 'Electronic control unit',
   'EGR': 'Exhaust gas recirculation',

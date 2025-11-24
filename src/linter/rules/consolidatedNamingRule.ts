@@ -24,6 +24,9 @@ export class ConsolidatedNamingRule implements ILinterRule {
     {
       nameContains: ['speed'],
       nameFormatter: (signal: Signal) => {
+        if (signal.fmt.len == 1) {
+          return null; // Ignore 1-bit signals
+        }
         const lowerName = signal.name.toLowerCase();
 
         let verticalPart: string | null = null;
