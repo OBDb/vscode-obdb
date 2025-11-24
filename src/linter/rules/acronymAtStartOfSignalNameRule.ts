@@ -60,6 +60,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'TPMS': 'Tire pressure monitoring system',
   'VIN': 'Vehicle identification number',
   'VSC': 'Vehicle stability control',
+  'VCS': 'Vehicle control system',
   'VVT': 'Variable valve timing',
   // Add more acronyms as needed
 };
