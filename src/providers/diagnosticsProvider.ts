@@ -10,6 +10,7 @@ import { Signal, SignalGroup } from '../linter/rules/rule';
 import { PerformanceMonitor } from '../utils/performanceMonitor';
 import { CommandSupportCache } from '../caches/commands/commandSupportCache';
 import { batchLoadAllCommandSupport, normalizeCommandId, stripReceiveFilter } from '../utils/commandSupportUtils';
+import { isYearAllowedByFilter, YearFilter } from '../utils/debugFilterCalculator';
 
 let diagnosticCollection: vscode.DiagnosticCollection;
 const signalLinter = new SignalLinter();
@@ -203,7 +204,7 @@ async function updateDiagnostics(document: vscode.TextDocument): Promise<void> {
 
           // Use batch-loaded data instead of individual lookups (O(1) instead of O(m))
           let isSupportedByAnyYear = false;
-          let isUnsupportedByAnyYear = false;
+          let unsupportedYearsInRange: string[] = [];
 
           if (batchSupportData) {
             const normalizedCommandId = normalizeCommandId(commandId);
@@ -211,14 +212,39 @@ async function updateDiagnostics(document: vscode.TextDocument): Promise<void> {
             const supportData = batchSupportData.get(normalizedCommandId) || batchSupportData.get(normalizedStripFilter);
 
             if (supportData) {
-              isSupportedByAnyYear = supportData.supported.length > 0;
-              isUnsupportedByAnyYear = supportData.unsupported.length > 0;
+              // Get the command's filter to determine the valid year range
+              const filterNode = findNodeAtLocation(commandNode, ["filter"]);
+              let commandFilter: YearFilter | undefined;
+
+              if (filterNode) {
+                try {
+                  const filterText = text.substring(filterNode.offset, filterNode.offset + filterNode.length);
+                  commandFilter = JSON.parse(filterText);
+                } catch (e) {
+                  // Ignore parse errors
+                }
+              }
+
+              // Filter unsupported years to only those within the command's filter range
+              const unsupportedYears = supportData.unsupported.filter(year => !supportData.supported.includes(year));
+              unsupportedYearsInRange = unsupportedYears.filter(yearStr => {
+                const year = parseInt(yearStr, 10);
+                return isYearAllowedByFilter(year, commandFilter);
+              });
+
+              // Check if any supported years are within the filter range
+              const supportedYearsInRange = supportData.supported.filter(yearStr => {
+                const year = parseInt(yearStr, 10);
+                return isYearAllowedByFilter(year, commandFilter);
+              });
+
+              isSupportedByAnyYear = supportedYearsInRange.length > 0;
             }
           }
 
-          // Only mark commands that are not supported by any model year
-          // and are explicitly marked as unsupported in at least one model year
-          if (!isSupportedByAnyYear && isUnsupportedByAnyYear) {
+          // Only mark commands that are not supported by any model year within the filter range
+          // and are explicitly marked as unsupported in at least TWO model years within the filter range
+          if (!isSupportedByAnyYear && unsupportedYearsInRange.length >= 2) {
             // Use the exact position of the cmd node in the document
             if (cmdNode.offset !== undefined && cmdNode.length !== undefined) {
               const startPos = document.positionAt(cmdNode.offset);

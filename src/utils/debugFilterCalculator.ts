@@ -7,12 +7,20 @@ export interface YearFilter {
 }
 
 /**
- * Helper function to check if a year is allowed by the command filter
+ * Helper function to check if a year is allowed by the command filter.
+ * Handles all filter types:
+ * - No filter: all years allowed
+ * - years array: year must be in the list
+ * - from only: year >= from
+ * - to only: year <= to
+ * - from AND to (from <= to): from <= year <= to
+ * - from OR to (to < from): year <= to OR year >= from
+ *
  * @param year The year to check
  * @param filter The command filter
  * @returns true if the year is allowed by the filter, false otherwise
  */
-function isYearAllowedByFilter(year: number, filter?: YearFilter): boolean {
+export function isYearAllowedByFilter(year: number, filter?: YearFilter): boolean {
   if (!filter) {
     return true; // No filter means all years are allowed
   }

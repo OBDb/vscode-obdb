@@ -15,6 +15,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'CAN': 'Controller area network',
   'CCM': 'Climate control module',
   'CDI': 'Capacitor discharge ignition',
+  'CPC': 'Canister purge control',
   'CVT': 'Continuously variable transmission',
   'CVVT': 'Continuously variable valve timing',
   'DPF': 'Diesel particulate filter',
