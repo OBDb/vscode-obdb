@@ -31,6 +31,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'ESP': 'Electronic stability program',
   'ETC': 'Electronic throttle control',
   'EVSE': 'Electric vehicle supply equipment',
+  'EWP': 'Electric water pump',
   'GPS': 'Global positioning system',
   'HVAC': 'Heating, ventilation, and air conditioning',
   'ICE': 'Internal combustion engine',
