@@ -18,17 +18,20 @@
   ],
   "activationEvents": [
     "onLanguage:json",
-    "onLanguage:yaml"
+    "onLanguage:yaml",
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "bin": {
     "obdb": "./dist/cli.js"
   },
   "scripts": {
-    "vscode:prepublish": "npm run package",
+    "vscode:prepublish": "npm run package && npm run compile:mcp",
     "compile": "webpack",
     "compile:cli": "tsc -p tsconfig.cli.json",
+    "compile:mcp": "tsc -p tsconfig.mcp.json",
     "compile:test": "tsc -p tsconfig.test.json",
+    "compile:all": "npm run compile && npm run compile:cli && npm run compile:mcp",
     "test": "npm run compile:test && node dist/utils/debugFilterCalculator.test.js",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
@@ -39,6 +42,12 @@
       "hoverProvider": "true",
       "decorationProvider": "true"
     },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "obdb-signalsets-provider",
+        "label": "OBDb Signalsets MCP Server"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -104,7 +113,7 @@
     "@types/node": "^18.x",
     "@types/vscode": "^1.60.0",
     "ts-loader": "^9.5.2",
-    "typescript": "^4.6.3",
+    "typescript": "^5.3.0",
     "webpack": "^5.99.7",
     "webpack-cli": "^6.0.1"
   },
@@ -112,6 +121,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
     "@types/fast-levenshtein": "^0.0.4",
     "canvas": "^3.1.0",
     "dictionary-en": "^4.0.0",

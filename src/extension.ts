@@ -613,6 +613,9 @@ export function activate(context: vscode.ExtensionContext) {
     handleTestExecutionResult(event);
   });
 
+  // Register MCP server provider
+  const mcpServerProvider = registerMcpServerProvider(context);
+
   // Add providers and other disposables to subscriptions
   context.subscriptions.push(
     hoverProvider,
@@ -631,6 +634,75 @@ export function activate(context: vscode.ExtensionContext) {
     testExecutionSubscription,
     testDiagnosticCollection
   );
+
+  // Add MCP server provider if registered
+  if (mcpServerProvider) {
+    context.subscriptions.push(mcpServerProvider);
+  }
+}
+
+/**
+ * Registers the MCP server provider for OBDb signalsets
+ * @param context The extension context
+ * @returns Disposable for the registration, or undefined if MCP API not available
+ */
+function registerMcpServerProvider(context: vscode.ExtensionContext): vscode.Disposable | undefined {
+  // Check if the MCP API is available
+  console.log('[OBDb MCP] Checking for MCP API...');
+  console.log('[OBDb MCP] vscode.lm exists:', 'lm' in vscode);
+  if ('lm' in vscode) {
+    console.log('[OBDb MCP] vscode.lm properties:', Object.keys((vscode as any).lm));
+  }
+
+  if (!('lm' in vscode) || !('registerMcpServerDefinitionProvider' in (vscode as any).lm)) {
+    console.log('[OBDb MCP] MCP API not available - Claude Code may not be installed or API not ready');
+    return undefined;
+  }
+
+  try {
+    const serverPath = vscode.Uri.joinPath(context.extensionUri, 'dist', 'mcp', 'server.js').fsPath;
+
+    const provider = (vscode as any).lm.registerMcpServerDefinitionProvider(
+      'obdb-signalsets-provider',
+      {
+        // Event that fires when server definitions change
+        onDidChangeMcpServerDefinitions: new vscode.EventEmitter<void>().event,
+
+        // Provide the list of MCP servers
+        provideMcpServerDefinitions: async () => {
+          // Only provide the server if we're in a workspace
+          if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
+            return [];
+          }
+
+          return [{
+            id: 'obdb-signalsets',
+            label: 'OBDb Signalsets',
+            description: 'Query and manage OBDb signal definitions, commands, and support matrices',
+            type: 'stdio',
+            command: 'node',
+            args: [serverPath],
+            env: {
+              OBDB_WORKSPACE_ROOT: vscode.workspace.workspaceFolders[0].uri.fsPath
+            }
+          }];
+        },
+
+        // Resolve the server definition when it needs to start
+        resolveMcpServerDefinition: async (server: any) => {
+          // No additional resolution needed - just return the server as-is
+          return server;
+        }
+      }
+    );
+
+    console.log('[OBDb MCP] Successfully registered MCP server provider');
+    console.log('[OBDb MCP] Server path:', serverPath);
+    return provider;
+  } catch (error) {
+    console.error('[OBDb MCP] Failed to register MCP server provider:', error);
+    return undefined;
+  }
 }
 
 /**

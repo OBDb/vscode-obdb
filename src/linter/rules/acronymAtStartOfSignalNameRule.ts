@@ -62,6 +62,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'TPS': 'Throttle position sensor',
   'TPMS': 'Tire pressure monitoring system',
   'VIN': 'Vehicle identification number',
+  'VMCU': 'Vehicle motor control unit',
   'VSC': 'Vehicle stability control',
   'VCS': 'Vehicle control system',
   'VVT': 'Variable valve timing',
