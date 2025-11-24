@@ -15,6 +15,7 @@ import { MapKeyNumericalRule } from './rules/mapKeyNumericalRule';
 import { CommandRaxDuplicationRule } from './rules/commandRaxDuplicationRule';
 import { SignalNameTypoRule } from './rules/signalNameTypoRule';
 import { BracketedContentInSignalNameRule } from './rules/bracketedContentInSignalNameRule';
+import { MulToDivSimplificationRule } from './rules/mulToDivSimplificationRule';
 
 /**
  * Registry that manages all linter rules
@@ -59,7 +60,8 @@ export class RuleRegistry {
       MapKeyNumericalRule,
       CommandRaxDuplicationRule,
       SignalNameTypoRule,
-      BracketedContentInSignalNameRule
+      BracketedContentInSignalNameRule,
+      MulToDivSimplificationRule
     ];
 
     // Instantiate each rule class
