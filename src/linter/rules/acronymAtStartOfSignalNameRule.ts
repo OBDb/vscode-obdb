@@ -42,6 +42,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'LKA': 'Lane keep assist',
   'MAF': 'Mass air flow',
   'MAP': 'Manifold absolute pressure',
+  'MDPS': 'Motor-driven power steering',
   'OBC': 'On-board charger',
   'OBD': 'On-board diagnostics',
   'OCS': 'Occupant classification system',
