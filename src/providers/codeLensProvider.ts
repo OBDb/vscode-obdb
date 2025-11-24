@@ -283,16 +283,27 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
               }
             }
 
-            // Collect filter boundaries (only simple filters with ONLY to or ONLY from)
+            // Collect filter boundaries
             if (commandFilter) {
-              const hasOnlyTo = commandFilter.to !== undefined && commandFilter.from === undefined && !commandFilter.years;
-              const hasOnlyFrom = commandFilter.from !== undefined && commandFilter.to === undefined && !commandFilter.years;
+              const hasTo = commandFilter.to !== undefined;
+              const hasFrom = commandFilter.from !== undefined;
+              const hasYears = commandFilter.years !== undefined;
 
-              if (hasOnlyTo) {
-                filterBoundaries.add(commandFilter.to + 1); // Boundary is after the "to" year
-              }
-              if (hasOnlyFrom) {
-                filterBoundaries.add(commandFilter.from); // Boundary is at the "from" year
+              // Handle "AND" range: both from and to present, with from < to
+              if (hasFrom && hasTo && !hasYears && commandFilter.from < commandFilter.to) {
+                filterBoundaries.add(commandFilter.from); // Boundary at the "from" year
+                filterBoundaries.add(commandFilter.to + 1); // Boundary after the "to" year
+              } else {
+                // Handle simple filters with ONLY to or ONLY from
+                const hasOnlyTo = hasTo && !hasFrom && !hasYears;
+                const hasOnlyFrom = hasFrom && !hasTo && !hasYears;
+
+                if (hasOnlyTo) {
+                  filterBoundaries.add(commandFilter.to + 1); // Boundary is after the "to" year
+                }
+                if (hasOnlyFrom) {
+                  filterBoundaries.add(commandFilter.from); // Boundary is at the "from" year
+                }
               }
             }
 
@@ -417,14 +428,25 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
                 // Calculate command-specific filter boundaries
                 const commandFilterBoundaries = new Set<number>();
                 if (commandFilter) {
-                  const hasOnlyTo = commandFilter.to !== undefined && commandFilter.from === undefined && !commandFilter.years;
-                  const hasOnlyFrom = commandFilter.from !== undefined && commandFilter.to === undefined && !commandFilter.years;
+                  const hasTo = commandFilter.to !== undefined;
+                  const hasFrom = commandFilter.from !== undefined;
+                  const hasYears = commandFilter.years !== undefined;
 
-                  if (hasOnlyTo) {
-                    commandFilterBoundaries.add(commandFilter.to + 1);
-                  }
-                  if (hasOnlyFrom) {
+                  // Handle "AND" range: both from and to present, with from < to
+                  if (hasFrom && hasTo && !hasYears && commandFilter.from < commandFilter.to) {
                     commandFilterBoundaries.add(commandFilter.from);
+                    commandFilterBoundaries.add(commandFilter.to + 1);
+                  } else {
+                    // Handle simple filters with ONLY to or ONLY from
+                    const hasOnlyTo = hasTo && !hasFrom && !hasYears;
+                    const hasOnlyFrom = hasFrom && !hasTo && !hasYears;
+
+                    if (hasOnlyTo) {
+                      commandFilterBoundaries.add(commandFilter.to + 1);
+                    }
+                    if (hasOnlyFrom) {
+                      commandFilterBoundaries.add(commandFilter.from);
+                    }
                   }
                 }
 
