@@ -88,8 +88,14 @@ export function getAllSignals(signalset: Signalset): Array<Signal & { commandId:
     const commandId = createCommandId(command);
 
     for (const signal of command.signals) {
+      // Extract bitOffset and bitLength from fmt if not directly present
+      const bitOffset = signal.bitOffset !== undefined ? signal.bitOffset : (signal as any).fmt?.bix;
+      const bitLength = signal.bitLength !== undefined ? signal.bitLength : (signal as any).fmt?.len;
+
       signals.push({
         ...signal,
+        bitOffset,
+        bitLength,
         commandId
       });
     }
