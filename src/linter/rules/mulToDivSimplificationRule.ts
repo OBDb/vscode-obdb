@@ -43,6 +43,12 @@ export class MulToDivSimplificationRule implements ILinterRule {
 
     const mulValue = mulNode.value as number;
 
+    // Only process if mul is a decimal value (less than 1)
+    // We don't want to suggest converting large integers like 2514600 to div
+    if (mulValue >= 1) {
+      return null;
+    }
+
     // Calculate the inverse (what div would be)
     if (mulValue === 0) {
       return null; // Can't divide by zero
