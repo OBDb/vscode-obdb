@@ -20,6 +20,24 @@ interface NamingPattern {
  */
 export class ConsolidatedNamingRule implements ILinterRule {
   private patterns: NamingPattern[] = [
+    // O2 sensor naming pattern
+    {
+      nameContains: ['o2s'],
+      nameFormatter: (signal: Signal) => {
+        const lowerName = signal.name.toLowerCase();
+
+        // Match patterns like "o2s b1s2", "o2s b1s1", etc.
+        const o2sMatch = lowerName.match(/o2s\s+b([12])s([12])/);
+        if (o2sMatch) {
+          const bank = o2sMatch[1];
+          const sensor = o2sMatch[2];
+          return `O2S, bank ${bank} sensor ${sensor}`;
+        }
+
+        return null;
+      },
+      description: 'O2 sensor signal names should follow the format "O2S, bank [1/2] sensor [1/2]"'
+    },
     // Wheel speed naming pattern
     {
       nameContains: ['speed'],

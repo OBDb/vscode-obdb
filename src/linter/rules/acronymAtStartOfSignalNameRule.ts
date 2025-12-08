@@ -9,6 +9,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'ACU': 'Airbag control unit',
   'ADAS': 'Advanced driver assistance systems',
   'AFR': 'Air-fuel ratio',
+  'AFS': 'Air fuel sensor',
   'ATF': 'Automatic transmission fluid',
   'AWD': 'All-wheel drive',
   'BCM': 'Body control module',
