@@ -23,7 +23,7 @@ export class SignalNameTypoRule implements ILinterRule {
     'api', 'can', 'lin', 'pwm', 'gpio', 'adc', 'dac', 'spi', 'i2c',
     'uart', 'usb', 'tcp', 'udp', 'http', 'https', 'json', 'xml', 'csv',
     'tpms', 'ebs', 'cpc', 'ocv', 'awd', 'osv', 'evse', 'cp', 'pd', 'obc',
-    'mdps', 'vcs', 'ign', 'ewp', 'a/c', 'ldc', 'vmcu',
+    'mdps', 'vcs', 'ign', 'ewp', 'a/c', 'ldc', 'vmcu', 'afs',
   ]);
 
   // Words that are commonly flagged but are actually correct in automotive context
@@ -36,7 +36,8 @@ export class SignalNameTypoRule implements ILinterRule {
     'coolant', 'antifreeze', 'brake', 'caliper', 'rotor', 'seatbelt',
     'airbag', 'traction', 'stability', 'cruise', 'parking', 'reverse',
     'overdrive', 'lockup', 'downshift', 'upshift', 'kickdown', 'recirculation',
-    'wastegate', 'evaporative', 'regen', 'disconnector', 'contactor',
+    'wastegate', 'evaporative', 'regen', 'disconnector', 'contactor', 'thermistor',
+    'valvematic',
   ]);
 
   constructor() {
