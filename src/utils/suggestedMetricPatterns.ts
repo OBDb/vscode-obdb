@@ -4,6 +4,7 @@
 export interface MetricPattern {
   idPattern?: RegExp;
   namePattern?: RegExp;
+  excludeNamePattern?: RegExp;
   suggestedMetric: string;
   description: string;
 }
@@ -96,12 +97,29 @@ export const METRIC_PATTERNS: MetricPattern[] = [
     description: 'Battery state of health'
   },
 
-  // Traction battery voltage (HV battery)
+  // Traction battery capacity (HV battery energy in kWh)
+  {
+    idPattern: /HV.*BAT.*KWH|HV.*BAT.*ENERGY|HV.*BAT.*CAPACITY|TRACTION.*BAT.*CAPACITY/i,
+    namePattern: /hv\s+battery\s+energy|high\s+voltage\s+battery\s+energy|traction\s+battery\s+capacity|hv\s+battery\s+capacity/i,
+    suggestedMetric: 'tractionBatteryCapacity',
+    description: 'Traction battery capacity'
+  },
+
+  // Traction battery current (HV battery current)
+  {
+    idPattern: /HV.*BAT.*_A$|HV.*BAT.*CURRENT|HV.*BAT.*AMPS|TRACTION.*BAT.*CURRENT|BATTERY_CURRENT/i,
+    namePattern: /hv\s+battery\s+current|high\s+voltage\s+battery\s+current|traction\s+battery\s+current|battery\s+current/i,
+    suggestedMetric: 'tractionBatteryCurrent',
+    description: 'Traction battery current'
+  },
+
+  // Traction battery voltage (HV battery) - exclude minimum/maximum/module voltages
   {
     idPattern: /HV.*BAT.*VOLT|TRACTION.*BAT.*VOLT|HIGH.*VOLT.*BAT.*VOLT/i,
     namePattern: /high\s+voltage\s+battery.*voltage|traction\s+battery.*voltage|hv\s+battery.*voltage/i,
     suggestedMetric: 'tractionBatteryVoltage',
-    description: 'Traction battery voltage'
+    description: 'Traction battery voltage',
+    excludeNamePattern: /minimum|maximum|min|max|module/i
   },
 
   // Starter battery voltage (12V / Aux battery)
@@ -128,6 +146,11 @@ export function findSuggestedMetric(signalId: string, signalName: string): Metri
   for (const pattern of METRIC_PATTERNS) {
     const idMatches = pattern.idPattern ? pattern.idPattern.test(signalId) : false;
     const nameMatches = pattern.namePattern ? pattern.namePattern.test(signalName) : false;
+
+    // Check if name matches exclusion pattern
+    if (pattern.excludeNamePattern && pattern.excludeNamePattern.test(signalName)) {
+      continue; // Skip this pattern if the name matches the exclusion
+    }
 
     if (idMatches || nameMatches) {
       return pattern;
