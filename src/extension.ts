@@ -8,6 +8,7 @@ import { registerTestExplorer } from './providers/testExplorerProvider';
 import { createDefinitionProvider } from './providers/definitionProvider';
 import { createCodeLensProvider } from './providers/codeLensProvider';
 import { CommandSupportCache } from './caches/commands/commandSupportCache';
+import { SuggestedMetricDecorationProvider } from './providers/suggestedMetricDecorationProvider';
 
 // Create a diagnostic collection for test failures
 let testDiagnosticCollection: vscode.DiagnosticCollection;
@@ -48,6 +49,10 @@ export function activate(context: vscode.ExtensionContext) {
   // Register the CodeLens provider for JSON command files
   const codeLensProvider = createCodeLensProvider(commandSupportCache);
   console.log('Registered CodeLens provider for JSON command files');
+
+  // Register the decoration provider for signals with suggestedMetric
+  const suggestedMetricDecorationProvider = new SuggestedMetricDecorationProvider();
+  console.log('Registered decoration provider for signals with suggestedMetric');
 
   // Register command for applying debug filters
   const applyDebugFilterCommand = vscode.commands.registerCommand('obdb.applyDebugFilter', async (args: {
@@ -623,7 +628,8 @@ export function activate(context: vscode.ExtensionContext) {
     diagnosticsProvider,
     testProvider,
     ...definitionProvider,
-    codeLensProvider, // Added provider to subscriptions
+    codeLensProvider,
+    suggestedMetricDecorationProvider,
     applyDebugFilterCommand,
     optimizeDebugFilterCommand,
     optimizeFilterCommand,
