@@ -16,6 +16,7 @@ import { CommandRaxDuplicationRule } from './rules/commandRaxDuplicationRule';
 import { SignalNameTypoRule } from './rules/signalNameTypoRule';
 import { BracketedContentInSignalNameRule } from './rules/bracketedContentInSignalNameRule';
 import { MulToDivSimplificationRule } from './rules/mulToDivSimplificationRule';
+import { SuggestedMetricSuggestionRule } from './rules/suggestedMetricSuggestionRule';
 
 /**
  * Registry that manages all linter rules
@@ -61,7 +62,8 @@ export class RuleRegistry {
       CommandRaxDuplicationRule,
       SignalNameTypoRule,
       BracketedContentInSignalNameRule,
-      MulToDivSimplificationRule
+      MulToDivSimplificationRule,
+      SuggestedMetricSuggestionRule
     ];
 
     // Instantiate each rule class

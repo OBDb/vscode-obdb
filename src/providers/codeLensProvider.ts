@@ -7,6 +7,7 @@ import { PerformanceMonitor } from '../utils/performanceMonitor';
 import { calculateDebugFilter } from '../utils/debugFilterCalculator';
 import { GenerationSet } from '../utils/generationsCore';
 import { calculateOptimizedFilter } from '../utils/filterOptimizer';
+import { findSuggestedMetric } from '../utils/suggestedMetricPatterns';
 
 interface DocumentCodeLensCache {
   version: number;
@@ -614,6 +615,60 @@ export class CommandCodeLensProvider implements vscode.CodeLensProvider {
         }
       }
     }
+
+      // Scan for signals that need suggestedMetric
+      if (rootNode && rootNode.type === 'object') {
+        const commandsProperty = jsonc.findNodeAtLocation(rootNode, ['commands']);
+        if (commandsProperty && commandsProperty.type === 'array' && commandsProperty.children) {
+        for (const commandNode of commandsProperty.children) {
+          if (commandNode.type === 'object' && commandNode.children) {
+            // Find the signals array in this command
+            const signalsNode = jsonc.findNodeAtLocation(commandNode, ['signals']);
+            if (signalsNode && signalsNode.type === 'array' && signalsNode.children) {
+              for (const signalNode of signalsNode.children) {
+                try {
+                  const signal = jsonc.getNodeValue(signalNode);
+
+                  // Skip if signal already has suggestedMetric
+                  if (!signal || signal.suggestedMetric) {
+                    continue;
+                  }
+
+                  // Skip if signal doesn't have both ID and name
+                  if (!signal.id || !signal.name) {
+                    continue;
+                  }
+
+                  // Check if this signal matches any pattern
+                  const matchedPattern = findSuggestedMetric(signal.id, signal.name);
+                  if (matchedPattern) {
+                    const signalRange = new vscode.Range(
+                      document.positionAt(signalNode.offset),
+                      document.positionAt(signalNode.offset + signalNode.length)
+                    );
+
+                    const suggestedMetricCodeLens = new vscode.CodeLens(signalRange, {
+                      title: `🔗 Connect to ${matchedPattern.suggestedMetric}`,
+                      command: 'obdb.addSuggestedMetric',
+                      tooltip: `Add suggestedMetric: "${matchedPattern.suggestedMetric}" (${matchedPattern.description})`,
+                      arguments: [{
+                        documentUri: document.uri.toString(),
+                        signalRange: signalRange,
+                        suggestedMetric: matchedPattern.suggestedMetric,
+                        signalNode: signal
+                      }]
+                    });
+                    codeLenses.push(suggestedMetricCodeLens);
+                  }
+                } catch (err) {
+                  console.error('Error processing signal for suggestedMetric:', err);
+                }
+              }
+            }
+          }
+        }
+        }
+      }
 
       // Cache the result
       this.documentCache.set(documentUri, {
