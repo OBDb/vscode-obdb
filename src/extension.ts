@@ -258,6 +258,47 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
+  // Register command for adding suggested metric to signal
+  const addSuggestedMetricCommand = vscode.commands.registerCommand('obdb.addSuggestedMetric', async (args: {
+    documentUri: string;
+    signalRange: vscode.Range;
+    suggestedMetric: string;
+    signalNode: any;
+  }) => {
+    try {
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(args.documentUri));
+      const editor = await vscode.window.showTextDocument(document);
+
+      // Get the signal object text
+      const signalText = document.getText(args.signalRange);
+
+      // Find the position to insert suggestedMetric - after "name" property
+      const nameMatch = signalText.match(/"name"\s*:\s*"[^"]*"/);
+
+      if (nameMatch && nameMatch.index !== undefined) {
+        // Find the end of the name property
+        const nameEndIndex = nameMatch.index + nameMatch[0].length;
+
+        // Insert suggestedMetric after name, preserving formatting
+        const beforeName = signalText.substring(0, nameEndIndex);
+        const afterName = signalText.substring(nameEndIndex);
+
+        // Add suggestedMetric with same spacing as surrounding properties
+        const modifiedText = beforeName + `, "suggestedMetric": "${args.suggestedMetric}"` + afterName;
+
+        await editor.edit(editBuilder => {
+          editBuilder.replace(args.signalRange, modifiedText);
+        });
+
+        vscode.window.showInformationMessage(`Added suggestedMetric: "${args.suggestedMetric}"`);
+      } else {
+        vscode.window.showErrorMessage('Could not find name property to insert suggestedMetric after');
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to add suggestedMetric: ${error}`);
+    }
+  });
+
   // Register command for adding rax filter
   const addRaxFilterCommand = vscode.commands.registerCommand('obdb.addRaxFilter', async (args: {
     documentUri: string;
@@ -633,6 +674,7 @@ export function activate(context: vscode.ExtensionContext) {
     applyDebugFilterCommand,
     optimizeDebugFilterCommand,
     optimizeFilterCommand,
+    addSuggestedMetricCommand,
     addRaxFilterCommand,
     optimizeAllDebugFiltersCommand,
     ...testCommands,
