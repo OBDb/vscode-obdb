@@ -15,7 +15,7 @@ export class SignalNameTypoRule implements ILinterRule {
   // Common automotive/technical abbreviations that are valid even if not in dictionary
   private readonly validAbbreviations: Set<string> = new Set([
     'abs', 'atf', 'esp', 'cvt', 'rpm', 'led', 'obd', 'ecu', 'pcm', 'bcm', 'tcm',
-    'vin', 'dtc', 'pid', 'mil', 'egr', 'dpf', 'def', 'scr', 'nox', 'hc',
+    'vin', 'dtc', 'pid', 'mil', 'egr', 'dpf', 'def', 'scr', 'nox', 'hc', 'dc', 'ac',
     'co', 'co2', 'o2', 'afr', 'maf', 'map', 'tps', 'iac', 'evap', 'canp',
     'vvt', 'vtec', 'cam', 'crank', 'knock', 'egt', 'iat', 'ect', 'cht', 'oil',
     'psig', 'psi', 'kpa', 'mph', 'kmh', 'gph', 'lph', 'mpg', 'lpkm',
@@ -23,7 +23,7 @@ export class SignalNameTypoRule implements ILinterRule {
     'api', 'can', 'lin', 'pwm', 'gpio', 'adc', 'dac', 'spi', 'i2c',
     'uart', 'usb', 'tcp', 'udp', 'http', 'https', 'json', 'xml', 'csv',
     'tpms', 'ebs', 'cpc', 'ocv', 'awd', 'osv', 'evse', 'cp', 'pd', 'obc',
-    'mdps', 'vcs', 'ign', 'ewp', 'a/c', 'ldc', 'vmcu', 'afs', 'baro', 'dtcs',
+    'mdps', 'vcs', 'ign', 'ewp', 'a/c', 'ldc', 'vmcu', 'afs', 'baro', 'dtcs', 'dc-dc',
   ]);
 
   // Words that are commonly flagged but are actually correct in automotive context
@@ -37,7 +37,7 @@ export class SignalNameTypoRule implements ILinterRule {
     'airbag', 'traction', 'stability', 'cruise', 'parking', 'reverse',
     'overdrive', 'lockup', 'downshift', 'upshift', 'kickdown', 'recirculation',
     'wastegate', 'evaporative', 'regen', 'disconnector', 'contactor', 'thermistor',
-    'valvematic',
+    'valvematic', 'coupler',
   ]);
 
   constructor() {
