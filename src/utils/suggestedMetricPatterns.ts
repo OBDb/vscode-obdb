@@ -70,7 +70,8 @@ export const METRIC_PATTERNS: MetricPattern[] = [
     idPattern: /_?VSS(_|$)/i,
     namePattern: /vehicle\s+speed|^speed$/i,
     suggestedMetric: 'speed',
-    description: 'Vehicle speed'
+    description: 'Vehicle speed',
+    excludeNamePattern: /wheel/i
   },
 
   // Odometer patterns
