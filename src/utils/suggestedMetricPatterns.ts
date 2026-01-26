@@ -82,6 +82,46 @@ export const METRIC_PATTERNS: MetricPattern[] = [
     description: 'Odometer'
   },
 
+  // Fuel level patterns
+  {
+    idPattern: /_FLI(_|$)/i,
+    namePattern: /^fuel\s+level$/i,
+    suggestedMetric: 'fuelTankLevel',
+    description: 'Fuel tank level'
+  },
+
+  // Engine coolant temperature patterns
+  {
+    idPattern: /ECT(_|$)|ENG.*COOLANT.*TEMP/i,
+    namePattern: /engine\s+coolant\s+temp/i,
+    suggestedMetric: 'engineCoolantTemperature',
+    description: 'Engine coolant temperature'
+  },
+
+  // Engine load patterns
+  {
+    idPattern: /ENG.*LOAD|ENGINE.*LOAD/i,
+    namePattern: /engine\s+load/i,
+    suggestedMetric: 'engineLoad',
+    description: 'Engine load'
+  },
+
+  // Fuel trim patterns
+  {
+    idPattern: /STFT|SHORT.*TERM.*FUEL.*TRIM/i,
+    namePattern: /short\s+term\s+fuel\s+trim/i,
+    suggestedMetric: 'shortTermFuelTrim',
+    description: 'Short term fuel trim'
+  },
+
+  // Mass air flow patterns
+  {
+    idPattern: /MAF(_|$)|MASS.*AIR.*FLOW/i,
+    namePattern: /mass\s+air\s+flow/i,
+    suggestedMetric: 'massAirFlow',
+    description: 'Mass air flow'
+  },
+
   // State of charge patterns
   {
     idPattern: /_?SOC(_|$)|STATE.*CHARGE/i,
