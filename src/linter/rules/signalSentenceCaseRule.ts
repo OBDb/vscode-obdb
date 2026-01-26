@@ -125,15 +125,20 @@ export class SignalSentenceCaseRule implements ILinterRule {
    * Also handles:
    * - Plural acronyms like "DTCs" that should remain uppercase
    * - Slash-separated acronyms like "A/C" (air conditioning)
+   * - Acronyms followed by punctuation like "RPM," or "ECU."
    * @param word The word to check
    * @returns True if the word is an acronym
    */
   private isAcronym(word: string): boolean {
     if (!word || word.length < 1) return false;
 
+    // Strip trailing punctuation for acronym checking
+    const strippedWord = word.replace(/[,.:;!?]+$/, '');
+    if (strippedWord.length === 0) return false;
+
     // Check for slash-separated acronyms (e.g., "A/C", "I/O")
-    if (word.includes('/')) {
-      const parts = word.split('/');
+    if (strippedWord.includes('/')) {
+      const parts = strippedWord.split('/');
       // Check if all parts are uppercase letters
       const allPartsUppercase = parts.every(part =>
         part.length > 0 && part === part.toUpperCase() && /^[A-Z0-9]+$/.test(part)
@@ -144,14 +149,14 @@ export class SignalSentenceCaseRule implements ILinterRule {
     }
 
     // Check for standard acronyms (all uppercase)
-    if (word === word.toUpperCase() && /^[A-Z0-9]+$/.test(word)) {
+    if (strippedWord === strippedWord.toUpperCase() && /^[A-Z0-9]+$/.test(strippedWord)) {
       return true;
     }
 
     // Check for plural acronyms (e.g., "DTCs", "ECUs")
     // Match words that end with 's' where the rest would be a valid acronym
-    if (word.endsWith('s')) {
-      const base = word.slice(0, -1); // Remove trailing 's'
+    if (strippedWord.endsWith('s')) {
+      const base = strippedWord.slice(0, -1); // Remove trailing 's'
       if (base.length >= 1 && base === base.toUpperCase() && /^[A-Z0-9]+$/.test(base)) {
         return true;
       }
