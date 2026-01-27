@@ -185,11 +185,15 @@ export function validateSignalset(signalset: Signalset): string[] {
         }
         seenSignalIds.add(signal.id);
 
-        if (signal.bitOffset === undefined) {
+        // Check for bitOffset/bitLength in both direct format and fmt.bix/fmt.len format
+        const bitOffset = signal.bitOffset !== undefined ? signal.bitOffset : (signal as any).fmt?.bix;
+        const bitLength = signal.bitLength !== undefined ? signal.bitLength : (signal as any).fmt?.len;
+
+        if (bitOffset === undefined) {
           errors.push(`Signal ${signal.id} missing bitOffset`);
         }
 
-        if (signal.bitLength === undefined) {
+        if (bitLength === undefined) {
           errors.push(`Signal ${signal.id} missing bitLength`);
         }
 
@@ -231,14 +235,30 @@ function findBitOverlaps(signals: Signal[]): Array<{
 
   for (let i = 0; i < signals.length; i++) {
     const sig1 = signals[i];
-    const sig1End = sig1.bitOffset + sig1.bitLength - 1;
+    const sig1Offset = sig1.bitOffset !== undefined ? sig1.bitOffset : (sig1 as any).fmt?.bix;
+    const sig1Length = sig1.bitLength !== undefined ? sig1.bitLength : (sig1 as any).fmt?.len;
+
+    // Skip if we don't have valid bit info
+    if (sig1Offset === undefined || sig1Length === undefined) {
+      continue;
+    }
+
+    const sig1End = sig1Offset + sig1Length - 1;
 
     for (let j = i + 1; j < signals.length; j++) {
       const sig2 = signals[j];
-      const sig2End = sig2.bitOffset + sig2.bitLength - 1;
+      const sig2Offset = sig2.bitOffset !== undefined ? sig2.bitOffset : (sig2 as any).fmt?.bix;
+      const sig2Length = sig2.bitLength !== undefined ? sig2.bitLength : (sig2 as any).fmt?.len;
+
+      // Skip if we don't have valid bit info
+      if (sig2Offset === undefined || sig2Length === undefined) {
+        continue;
+      }
+
+      const sig2End = sig2Offset + sig2Length - 1;
 
       // Check if ranges overlap
-      const overlapStart = Math.max(sig1.bitOffset, sig2.bitOffset);
+      const overlapStart = Math.max(sig1Offset, sig2Offset);
       const overlapEnd = Math.min(sig1End, sig2End);
 
       if (overlapStart <= overlapEnd) {
