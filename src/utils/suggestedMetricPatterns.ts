@@ -122,6 +122,14 @@ export const METRIC_PATTERNS: MetricPattern[] = [
     description: 'Mass air flow'
   },
 
+  // Engine oil temperature patterns
+  {
+    idPattern: /EOT(_|$)|ENG.*OIL.*TEMP|ENGINE.*OIL.*TEMP/i,
+    namePattern: /engine\s+oil\s+temp/i,
+    suggestedMetric: 'engineOilTemperature',
+    description: 'Engine oil temperature'
+  },
+
   // State of charge patterns
   {
     idPattern: /_?SOC(_|$)|STATE.*CHARGE/i,
