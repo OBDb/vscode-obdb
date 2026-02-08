@@ -92,7 +92,7 @@ export const METRIC_PATTERNS: MetricPattern[] = [
 
   // Engine coolant temperature patterns
   {
-    idPattern: /ECT(_|$)|ENG.*COOLANT.*TEMP/i,
+    idPattern: /(^|_)ECT(_|$)|ENG.*COOLANT.*TEMP/i,
     namePattern: /engine\s+coolant\s+temp/i,
     suggestedMetric: 'engineCoolantTemperature',
     description: 'Engine coolant temperature'
@@ -124,10 +124,18 @@ export const METRIC_PATTERNS: MetricPattern[] = [
 
   // Engine oil temperature patterns
   {
-    idPattern: /EOT(_|$)|ENG.*OIL.*TEMP|ENGINE.*OIL.*TEMP/i,
+    idPattern: /(^|_)EOT(_|$)|ENG.*OIL.*TEMP|ENGINE.*OIL.*TEMP/i,
     namePattern: /engine\s+oil\s+temp/i,
     suggestedMetric: 'engineOilTemperature',
     description: 'Engine oil temperature'
+  },
+
+  // Transmission fluid temperature patterns
+  {
+    idPattern: /ATF.*_T(_|$)|TRANSMISSION.*TEMP/i,
+    namePattern: /transmission\s+temperature|atf\s+temperature|automatic\s+transmission\s+fluid\s+temperature/i,
+    suggestedMetric: 'transmissionFluidTemperature',
+    description: 'Transmission fluid temperature'
   },
 
   // State of charge patterns
