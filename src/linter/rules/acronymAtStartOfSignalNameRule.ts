@@ -47,6 +47,7 @@ const ACRONYM_EXPANSIONS: Record<string, string> = {
   'MAF': 'Mass air flow',
   'MAP': 'Manifold absolute pressure',
   'MDPS': 'Motor-driven power steering',
+  'MCU': 'Motor control unit',
   'OBC': 'On-board charger',
   'OBD': 'On-board diagnostics',
   'OCS': 'Occupant classification system',

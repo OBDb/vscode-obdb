@@ -7,6 +7,7 @@ import { ILinterRule, LintResult, Signal, LintSeverity, LinterRuleConfig } from 
 interface MetricPattern {
   idPattern?: RegExp;
   namePattern?: RegExp;
+  excludeNamePattern?: RegExp;
   suggestedMetric: string;
   description: string;
 }
@@ -84,10 +85,11 @@ export class SuggestedMetricSuggestionRule implements ILinterRule {
       description: 'Odometer'
     },
 
-    // State of charge patterns
+    // State of charge patterns - exclude minimum/maximum cell SOC
     {
       idPattern: /_?SOC(_|$)|STATE.*CHARGE/i,
       namePattern: /state\s+of\s+charge|battery.*charge.*%|soc/i,
+      excludeNamePattern: /minimum|maximum|min\s+|max\s+|cell/i,
       suggestedMetric: 'stateOfCharge',
       description: 'Battery state of charge'
     },
@@ -159,8 +161,11 @@ export class SuggestedMetricSuggestionRule implements ILinterRule {
       const idMatches = pattern.idPattern ? pattern.idPattern.test(signal.id) : false;
       const nameMatches = pattern.namePattern ? pattern.namePattern.test(signal.name) : false;
 
-      // Match if either ID or name matches (or both)
-      if (idMatches || nameMatches) {
+      // Check if name matches exclusion pattern
+      const excludedByName = pattern.excludeNamePattern && pattern.excludeNamePattern.test(signal.name);
+
+      // Match if either ID or name matches (or both), and not excluded by name
+      if ((idMatches || nameMatches) && !excludedByName) {
         return {
           ruleId: this.getConfig().id,
           message: `Consider adding suggestedMetric: "${pattern.suggestedMetric}" (${pattern.description})`,
