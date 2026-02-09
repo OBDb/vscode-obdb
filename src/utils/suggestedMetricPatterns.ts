@@ -138,10 +138,11 @@ export const METRIC_PATTERNS: MetricPattern[] = [
     description: 'Transmission fluid temperature'
   },
 
-  // State of charge patterns
+  // State of charge patterns - exclude minimum/maximum cell SOC
   {
     idPattern: /_?SOC(_|$)|STATE.*CHARGE/i,
     namePattern: /state\s+of\s+charge|battery.*charge.*%|soc/i,
+    excludeNamePattern: /minimum|maximum|min\s+|max\s+|cell/i,
     suggestedMetric: 'stateOfCharge',
     description: 'Battery state of charge'
   },
