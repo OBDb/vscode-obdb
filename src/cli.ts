@@ -8,7 +8,7 @@ import {
   getSupportedModelYearsForCommand,
   getUnsupportedModelYearsForCommand
 } from './utils/commandSupportUtils';
-import { getGenerations, GenerationSet } from './utils/generationsCore';
+import { getGenerations, GenerationSet, formatYearsAsRanges } from './utils/generationsCore';
 import { CommandSupportCache } from './caches/commands/commandSupportCache';
 import { calculateDebugFilter } from './utils/debugFilterCalculator';
 import { CliSignalLinter } from './linter/linterCli';
@@ -251,7 +251,7 @@ async function optimizeCommand(workspacePath: string, commit: boolean = false): 
   }
 }
 
-async function commandSupportCommand(workspacePath: string, commandId: string): Promise<void> {
+async function commandSupportCommand(workspacePath: string, commandId: string, jsonOutput: boolean = false): Promise<void> {
   if (!fs.existsSync(workspacePath)) {
     console.error(`Error: Workspace path does not exist: ${workspacePath}`);
     process.exit(1);
@@ -262,10 +262,6 @@ async function commandSupportCommand(workspacePath: string, commandId: string): 
     printUsage();
     process.exit(1);
   }
-
-  console.log(`Analyzing command support for: ${commandId}`);
-  console.log(`Workspace: ${workspacePath}`);
-  console.log('');
 
   // Create cache instance for command support lookups
   const cache = new CommandSupportCache();
@@ -281,35 +277,47 @@ async function commandSupportCommand(workspacePath: string, commandId: string): 
     const sortedSupportedYears = supportedYears.sort((a, b) => parseInt(a) - parseInt(b));
     const sortedUnsupportedYears = unsupportedYears.sort((a, b) => parseInt(a) - parseInt(b));
 
-    // Display results
-    console.log('📊 Command Support Analysis:');
-    console.log('');
-
-    if (sortedSupportedYears.length > 0) {
-      console.log(`✅ Supported model years (${sortedSupportedYears.length}):`);
-      console.log(`   ${sortedSupportedYears.join(', ')}`);
+    if (jsonOutput) {
+      // Output JSON with formatted year ranges
+      const result = {
+        supported: formatYearsAsRanges(sortedSupportedYears),
+        unsupported: formatYearsAsRanges(sortedUnsupportedYears)
+      };
+      console.log(JSON.stringify(result));
     } else {
-      console.log('✅ Supported model years: None found');
-    }
+      // Display results
+      console.log(`Analyzing command support for: ${commandId}`);
+      console.log(`Workspace: ${workspacePath}`);
+      console.log('');
+      console.log('📊 Command Support Analysis:');
+      console.log('');
 
-    console.log('');
+      if (sortedSupportedYears.length > 0) {
+        console.log(`✅ Supported model years (${sortedSupportedYears.length}):`);
+        console.log(`   ${sortedSupportedYears.join(', ')}`);
+      } else {
+        console.log('✅ Supported model years: None found');
+      }
 
-    if (sortedUnsupportedYears.length > 0) {
-      console.log(`❌ Unsupported model years (${sortedUnsupportedYears.length}):`);
-      console.log(`   ${sortedUnsupportedYears.join(', ')}`);
-    } else {
-      console.log('❌ Unsupported model years: None found');
-    }
+      console.log('');
 
-    console.log('');
+      if (sortedUnsupportedYears.length > 0) {
+        console.log(`❌ Unsupported model years (${sortedUnsupportedYears.length}):`);
+        console.log(`   ${sortedUnsupportedYears.join(', ')}`);
+      } else {
+        console.log('❌ Unsupported model years: None found');
+      }
 
-    // Summary
-    const totalYears = sortedSupportedYears.length + sortedUnsupportedYears.length;
-    if (totalYears > 0) {
-      const supportPercentage = Math.round((sortedSupportedYears.length / totalYears) * 100);
-      console.log(`📈 Summary: ${sortedSupportedYears.length}/${totalYears} model years supported (${supportPercentage}%)`);
-    } else {
-      console.log('📈 Summary: No support data found for this command');
+      console.log('');
+
+      // Summary
+      const totalYears = sortedSupportedYears.length + sortedUnsupportedYears.length;
+      if (totalYears > 0) {
+        const supportPercentage = Math.round((sortedSupportedYears.length / totalYears) * 100);
+        console.log(`📈 Summary: ${sortedSupportedYears.length}/${totalYears} model years supported (${supportPercentage}%)`);
+      } else {
+        console.log('📈 Summary: No support data found for this command');
+      }
     }
 
   } catch (error) {
@@ -464,7 +472,7 @@ async function main(): Promise<void> {
         printUsage();
         process.exit(1);
       }
-      await commandSupportCommand(options.workspacePath, options.commandId);
+      await commandSupportCommand(options.workspacePath, options.commandId, options.json || false);
       break;
     default:
       console.error(`Error: Unknown command '${options.command}'`);
