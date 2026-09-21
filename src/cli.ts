@@ -386,9 +386,20 @@ async function lintCommand(workspacePath: string, jsonOutput: boolean = false): 
       }
     }
 
+    // Results carry jsonc nodes, whose parent links make them circular, so
+    // report a node by the line it starts on instead.
+    const lineOf = (result: any): number | undefined => {
+      const node = Array.isArray(result.node) ? result.node[0] : result.node;
+      return typeof node?.offset === 'number' ? content.slice(0, node.offset).split('\n').length : undefined;
+    };
+
     if (jsonOutput) {
       // Output as JSON
-      console.log(JSON.stringify(allResults, null, 2));
+      console.log(JSON.stringify(allResults.map(r => ({
+        ruleId: r.ruleId,
+        message: r.message,
+        line: lineOf(r),
+      })), null, 2));
     } else {
       // Format and display human-readable output
       if (allResults.length === 0) {
@@ -408,7 +419,7 @@ async function lintCommand(workspacePath: string, jsonOutput: boolean = false): 
       if (errors.length > 0) {
         console.log(`[bold red]Errors (${errors.length})[/bold red]`);
         for (const issue of errors) {
-          console.log(`  [red]✗[/red] ${issue.ruleId}: ${issue.message}`);
+          console.log(`  [red]✗[/red] ${lineOf(issue) ?? '?'}: ${issue.ruleId}: ${issue.message}`);
         }
         console.log('');
       }
@@ -416,18 +427,15 @@ async function lintCommand(workspacePath: string, jsonOutput: boolean = false): 
       if (warnings.length > 0) {
         console.log(`[bold yellow]Warnings (${warnings.length})[/bold yellow]`);
         for (const issue of warnings) {
-          console.log(`  [yellow]⚠[/yellow] ${issue.ruleId}: ${issue.message}`);
+          console.log(`  [yellow]⚠[/yellow] ${lineOf(issue) ?? '?'}: ${issue.ruleId}: ${issue.message}`);
         }
         console.log('');
       }
 
       if (info.length > 0) {
         console.log(`[bold cyan]Info (${info.length})[/bold cyan]`);
-        for (const issue of info.slice(0, 10)) {
-          console.log(`  [cyan]ℹ[/cyan] ${issue.ruleId}: ${issue.message}`);
-        }
-        if (info.length > 10) {
-          console.log(`  ... and ${info.length - 10} more`);
+        for (const issue of info) {
+          console.log(`  [cyan]ℹ[/cyan] ${lineOf(issue) ?? '?'}: ${issue.ruleId}: ${issue.message}`);
         }
         console.log('');
       }
