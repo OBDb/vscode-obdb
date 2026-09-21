@@ -41,7 +41,50 @@ export class SignalNameTypoRule implements ILinterRule {
   ]);
 
   constructor() {
-    this.initializeSpellChecker();
+    const dictionary = this.readDictionaryFromDisk();
+    if (dictionary) {
+      this.useDictionary(dictionary);
+    } else {
+      this.initializeSpellChecker();
+    }
+  }
+
+  /**
+   * Reads dictionary-en's files directly when the package is on disk, as it is
+   * for the CLI. dictionary-en is an ES module with top-level await, which the
+   * compiled CommonJS require() cannot load on newer Node releases, and loading
+   * it asynchronously would leave the checker unready for a CLI run that lints
+   * as soon as the rule is constructed.
+   */
+  private readDictionaryFromDisk(): { aff: Buffer; dic: Buffer } | null {
+    try {
+      const entry = require.resolve('dictionary-en');
+      if (typeof entry !== 'string') {
+        return null;
+      }
+      const fs = require('fs');
+      const path = require('path');
+      const dir = path.dirname(entry);
+      return {
+        aff: fs.readFileSync(path.join(dir, 'index.aff')),
+        dic: fs.readFileSync(path.join(dir, 'index.dic')),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private useDictionary(dictionary: { aff: Buffer | Uint8Array; dic: Buffer | Uint8Array }): void {
+    this.spellChecker = nspell(dictionary);
+
+    // Add domain-specific words to personal dictionary
+    this.domainSpecificWords.forEach(word => {
+      this.spellChecker.add(word);
+    });
+
+    this.validAbbreviations.forEach(abbrev => {
+      this.spellChecker.add(abbrev);
+    });
   }
 
   /**
@@ -53,16 +96,7 @@ export class SignalNameTypoRule implements ILinterRule {
       const dictionaryEn = await import('dictionary-en');
 
       // dictionary-en exports aff and dic buffers directly
-      this.spellChecker = nspell(dictionaryEn.default);
-
-      // Add domain-specific words to personal dictionary
-      this.domainSpecificWords.forEach(word => {
-        this.spellChecker.add(word);
-      });
-
-      this.validAbbreviations.forEach(abbrev => {
-        this.spellChecker.add(abbrev);
-      });
+      this.useDictionary(dictionaryEn.default);
     } catch (error) {
       console.warn('Failed to initialize spell checker:', error);
       this.spellChecker = null;
