@@ -52,7 +52,7 @@ export function convertToVscodeDiagnostics(
 
     const diagnostic = new vscode.Diagnostic(range, result.message, vscodeSeverity);
     diagnostic.code = result.ruleId;
-    diagnostic.source = 'obdb-linter';
+    diagnostic.source = 'obdb-signal-linter';
 
     diagnostics.push(diagnostic);
   }
