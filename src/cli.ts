@@ -157,6 +157,14 @@ async function optimizeCommand(workspacePath: string, commit: boolean = false): 
           commandIndex: index,
           useDbgTrue: true
         });
+      } else if (Object.keys(newFilter).length === 0) {
+        console.log(`     ✅ Removing dbgfilter: supported on every year`);
+        editsToApply.push({
+          commandId,
+          newFilter,
+          commandIndex: index,
+          useDbgTrue: false
+        });
       } else {
         console.log(`     ✅ Setting dbgfilter: ${JSON.stringify(newFilter)}`);
         editsToApply.push({
@@ -206,8 +214,10 @@ async function optimizeCommand(workspacePath: string, commit: boolean = false): 
             } else {
               firstLine = firstLine + ', "dbg": true';
             }
-          } else {
-            // Add dbgfilter
+          } else if (Object.keys(edit.newFilter!).length > 0) {
+            // Add dbgfilter. An empty one is left out: the app reads an empty
+            // filter as matching every year, which would debug the command
+            // on every year instead of none.
             const filter = edit.newFilter!;
             const orderedFilter: any = {};
             if (filter.to !== undefined) orderedFilter.to = filter.to;
@@ -235,7 +245,7 @@ async function optimizeCommand(workspacePath: string, commit: boolean = false): 
         }
 
         content = content.substring(0, commandStart) + commandText + content.substring(commandEnd);
-        const action = edit.useDbgTrue ? 'Set "dbg": true' : 'Set dbgfilter';
+        const action = edit.useDbgTrue ? 'Set "dbg": true' : Object.keys(edit.newFilter!).length === 0 ? 'Removed dbgfilter' : 'Set dbgfilter';
         console.log(`  ✅ ${action} for ${edit.commandId}`);
       }
 
