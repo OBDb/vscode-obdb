@@ -17,6 +17,8 @@ import { SignalNameTypoRule } from './rules/signalNameTypoRule';
 import { BracketedContentInSignalNameRule } from './rules/bracketedContentInSignalNameRule';
 import { MulToDivSimplificationRule } from './rules/mulToDivSimplificationRule';
 import { SuggestedMetricSuggestionRule } from './rules/suggestedMetricSuggestionRule';
+import { EcuEntryUnusedRule } from './rules/ecuEntryUnusedRule';
+import { EcuUnmappedPhysicalHeaderRule } from './rules/ecuUnmappedPhysicalHeaderRule';
 
 /**
  * Registry that manages all linter rules
@@ -63,7 +65,9 @@ export class RuleRegistry {
       SignalNameTypoRule,
       BracketedContentInSignalNameRule,
       MulToDivSimplificationRule,
-      SuggestedMetricSuggestionRule
+      SuggestedMetricSuggestionRule,
+      EcuEntryUnusedRule,
+      EcuUnmappedPhysicalHeaderRule
     ];
 
     // Instantiate each rule class
