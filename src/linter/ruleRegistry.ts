@@ -18,6 +18,7 @@ import { BracketedContentInSignalNameRule } from './rules/bracketedContentInSign
 import { MulToDivSimplificationRule } from './rules/mulToDivSimplificationRule';
 import { SuggestedMetricSuggestionRule } from './rules/suggestedMetricSuggestionRule';
 import { EcuEntryUnusedRule } from './rules/ecuEntryUnusedRule';
+import { SyntheticFormulaSignalsRule } from './rules/syntheticFormulaSignalsRule';
 import { EcuUnmappedPhysicalHeaderRule } from './rules/ecuUnmappedPhysicalHeaderRule';
 
 /**
@@ -67,7 +68,8 @@ export class RuleRegistry {
       MulToDivSimplificationRule,
       SuggestedMetricSuggestionRule,
       EcuEntryUnusedRule,
-      EcuUnmappedPhysicalHeaderRule
+      EcuUnmappedPhysicalHeaderRule,
+      SyntheticFormulaSignalsRule
     ];
 
     // Instantiate each rule class

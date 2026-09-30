@@ -32,7 +32,7 @@
     "compile:mcp": "tsc -p tsconfig.mcp.json",
     "compile:test": "tsc -p tsconfig.test.json",
     "compile:all": "npm run compile && npm run compile:cli && npm run compile:mcp",
-    "test": "npm run compile:test && node dist/utils/debugFilterCalculator.test.js",
+    "test": "npm run compile:test && node dist/utils/debugFilterCalculator.test.js && node dist/linter/rules/syntheticFormulaSignalsRule.test.js",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
     "pretest": "npm run compile"
