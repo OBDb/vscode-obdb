@@ -173,7 +173,24 @@ export async function getUnsupportedModelYearsForCommand(commandId: string, work
 }
 
 /**
- * Gets all model years that support a specific command
+ * Whether any reply in a command's fixture decoded to a value. A reply whose
+ * every signal decodes to null, such as filler under a `nullmin` bound, shows
+ * the command answers but not that its layout reads anything.
+ */
+export function fixtureHasDecodedValue(fixture: any): boolean {
+  const testCases = fixture?.test_cases;
+  if (!Array.isArray(testCases)) {
+    return false;
+  }
+  return testCases.some((testCase: any) =>
+    Object.values(testCase?.expected_values ?? {}).some(value => value !== null && value !== undefined)
+  );
+}
+
+/**
+ * Gets all model years that support a specific command. A year with a fixture
+ * for the command counts only when a reply in it decoded to a value; a year
+ * without one falls back to its command_support.yaml entry.
  * @param commandId The command ID to check (e.g. '7E0.2211BA')
  * @param workspaceRoot The workspace folder root path
  * @param cache The cache instance to use
@@ -201,6 +218,7 @@ export async function getSupportedModelYearsForCommand(commandId: string, worksp
         }
 
         let foundInYear = false;
+        let hasFixture = false;
         const commandsDir = path.join(yearPath, 'commands');
         try {
           const commandsDirStat = await fs.promises.stat(commandsDir);
@@ -215,9 +233,13 @@ export async function getSupportedModelYearsForCommand(commandId: string, worksp
 
               // Match only if both header and suffix match
               if (fileHeader === commandHeader && fileSuffix === commandSuffix) {
-                supportedYears.push(year);
-                foundInYear = true;
-                break;
+                hasFixture = true;
+                const fixture = await cache.getYamlFile(path.join(commandsDir, file));
+                if (fixtureHasDecodedValue(fixture)) {
+                  supportedYears.push(year);
+                  foundInYear = true;
+                  break;
+                }
               }
             }
           }
@@ -225,7 +247,7 @@ export async function getSupportedModelYearsForCommand(commandId: string, worksp
           // It's ok if there's no commands directory
         }
 
-        if (!foundInYear) {
+        if (!foundInYear && !hasFixture) {
           const supportFilePath = path.join(yearPath, 'command_support.yaml');
           const yamlContent = await cache.getYamlFile(supportFilePath);
 
@@ -485,20 +507,35 @@ export async function batchLoadAllCommandSupport(
 
         // Check command files directory
         const commandsDir = path.join(yearPath, 'commands');
+        // Commands whose fixtures this year decoded no value, so their
+        // command_support.yaml entries don't confirm them either
+        const nullOnlyCommands = new Set<string>();
         try {
           const commandsDirStat = await fs.promises.stat(commandsDir);
           if (commandsDirStat.isDirectory()) {
             const commandFiles = await cache.getDirectoryEntries(commandsDir);
+            const valuedCommands = new Set<string>();
             for (const file of commandFiles) {
               // Extract command ID from filename
               const fileNameWithoutExt = normalizeCommandId(file.replace(/\.(yaml|yml)$/, ''));
+              const variants = [fileNameWithoutExt, normalizeCommandId(stripReceiveFilter(fileNameWithoutExt))];
+
+              const fixture = await cache.getYamlFile(path.join(commandsDir, file));
+              if (!fixtureHasDecodedValue(fixture)) {
+                variants.forEach(variant => nullOnlyCommands.add(variant));
+                continue;
+              }
+              variants.forEach(variant => valuedCommands.add(variant));
 
               // Add to result map
               if (!result.has(fileNameWithoutExt)) {
                 result.set(fileNameWithoutExt, { supported: [], unsupported: [] });
               }
-              result.get(fileNameWithoutExt)!.supported.push(year);
+              if (!result.get(fileNameWithoutExt)!.supported.includes(year)) {
+                result.get(fileNameWithoutExt)!.supported.push(year);
+              }
             }
+            valuedCommands.forEach(command => nullOnlyCommands.delete(command));
           }
         } catch (err) {
           // It's ok if there's no commands directory
@@ -518,6 +555,9 @@ export async function batchLoadAllCommandSupport(
 
                 // Add both variants to ensure matches
                 for (const variant of [normalizedCmd, normalizedStripFilter]) {
+                  if (nullOnlyCommands.has(variant)) {
+                    continue;
+                  }
                   if (!result.has(variant)) {
                     result.set(variant, { supported: [], unsupported: [] });
                   }
