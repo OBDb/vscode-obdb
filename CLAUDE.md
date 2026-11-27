@@ -172,3 +172,5 @@ Signalsets contain commands, which contain signals:
 4. **Group related signals** by path for better organization
 5. **Use batch operations** when working with multiple commands or years
 6. **Verify bit layouts** don't overlap when adding new signals to commands
+
+@AGENTS.md
